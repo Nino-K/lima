@@ -42,6 +42,7 @@ func (p *ClosableListeners) Forward(ctx context.Context, client *guestagentclien
 }
 
 func (p *ClosableListeners) Remove(_ context.Context, protocol, hostAddress, guestAddress string) {
+	logrus.Debugf("removing listener for hostAddress: %s, guestAgent: %s", hostAddress, guestAddress)
 	key := key(protocol, hostAddress, guestAddress)
 	switch protocol {
 	case "tcp", "tcp6":
@@ -65,14 +66,13 @@ func (p *ClosableListeners) Remove(_ context.Context, protocol, hostAddress, gue
 
 func (p *ClosableListeners) forwardTCP(ctx context.Context, client *guestagentclient.GuestAgentClient, hostAddress, guestAddress string) {
 	key := key("tcp", hostAddress, guestAddress)
-	defer p.Remove(ctx, "tcp", hostAddress, guestAddress)
-
 	p.listenersRW.Lock()
 	_, ok := p.listeners[key]
 	if ok {
 		p.listenersRW.Unlock()
 		return
 	}
+	defer p.Remove(ctx, "tcp", hostAddress, guestAddress)
 	tcpLis, err := Listen(ctx, p.listenConfig, hostAddress)
 	if err != nil {
 		logrus.Errorf("failed to accept TCP connection: %v", err)
