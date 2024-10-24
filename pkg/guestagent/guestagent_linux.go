@@ -18,6 +18,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"github.com/lima-vm/lima/v2/pkg/guestagent/api"
+	"github.com/lima-vm/lima/v2/pkg/guestagent/events"
 	"github.com/lima-vm/lima/v2/pkg/guestagent/iptables"
 	"github.com/lima-vm/lima/v2/pkg/guestagent/kubernetesservice"
 	"github.com/lima-vm/lima/v2/pkg/guestagent/procnettcp"
@@ -28,6 +29,7 @@ func New(ctx context.Context, newTicker func() (<-chan time.Time, func()), iptab
 	a := &agent{
 		newTicker:                newTicker,
 		kubernetesServiceWatcher: kubernetesservice.NewServiceWatcher(),
+		dockerEventMonitor:       events.NewDockerEventMonitor(),
 	}
 
 	auditClient, err := libaudit.NewMulticastAuditClient(nil)
@@ -102,6 +104,7 @@ type agent struct {
 	latestIPTables           []iptables.Entry
 	latestIPTablesMu         sync.RWMutex
 	kubernetesServiceWatcher *kubernetesservice.ServiceWatcher
+	dockerEventMonitor       *events.DockerEventMonitor
 }
 
 // setWorthCheckingIPTablesRoutine sets worthCheckingIPTables to be true
@@ -197,6 +200,13 @@ func isEventEmpty(ev *api.Event) bool {
 
 func (a *agent) Events(ctx context.Context, ch chan *api.Event) {
 	defer close(ch)
+
+	go func() {
+		if err := a.dockerEventMonitor.MonitorPorts(ctx, ch); err != nil {
+			errorCh <- err
+		}
+	}()
+
 	tickerCh, tickerClose := a.newTicker()
 	defer tickerClose()
 	var st eventState
@@ -209,6 +219,8 @@ func (a *agent) Events(ctx context.Context, ch chan *api.Event) {
 		select {
 		case <-ctx.Done():
 			return
+		case err := <-errorCh:
+			logrus.Errorf("container engine event monitoring failed: %s", err)
 		case _, ok := <-tickerCh:
 			if !ok {
 				return
