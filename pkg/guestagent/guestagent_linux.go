@@ -30,6 +30,7 @@ func New(newTicker func() (<-chan time.Time, func()), iptablesIdle time.Duration
 		newTicker:                newTicker,
 		kubernetesServiceWatcher: kubernetesservice.NewServiceWatcher(),
 		dockerEventMonitor:       events.NewDockerEventMonitor(),
+		containerdEventMonitor:   events.NewContainerdEventMonitor(),
 	}
 
 	auditClient, err := libaudit.NewMulticastAuditClient(nil)
@@ -105,6 +106,7 @@ type agent struct {
 	latestIPTablesMu         sync.RWMutex
 	kubernetesServiceWatcher *kubernetesservice.ServiceWatcher
 	dockerEventMonitor       *events.DockerEventMonitor
+	containerdEventMonitor   *events.ContainerdEventMonitor
 }
 
 // setWorthCheckingIPTablesRoutine sets worthCheckingIPTables to be true
@@ -202,6 +204,12 @@ func isEventEmpty(ev *api.Event) bool {
 func (a *agent) Events(ctx context.Context, ch chan *api.Event) {
 	defer close(ch)
 
+	errorCh := make(chan error)
+	go func() {
+		if err := a.containerdEventMonitor.MonitorPorts(ctx, ch); err != nil {
+			errorCh <- err
+		}
+	}()
 	go func() {
 		if err := a.dockerEventMonitor.MonitorPorts(ctx, ch); err != nil {
 			errorCh <- err
