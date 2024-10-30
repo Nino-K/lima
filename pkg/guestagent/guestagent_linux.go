@@ -31,6 +31,7 @@ func New(newTicker func() (<-chan time.Time, func()), iptablesIdle time.Duration
 		kubernetesServiceWatcher: kubernetesservice.NewServiceWatcher(),
 		dockerEventMonitor:       events.NewDockerEventMonitor(),
 		containerdEventMonitor:   events.NewContainerdEventMonitor(),
+		kubeServiceWatcher:       events.NewKubeServiceWatcher(),
 	}
 
 	auditClient, err := libaudit.NewMulticastAuditClient(nil)
@@ -107,6 +108,7 @@ type agent struct {
 	kubernetesServiceWatcher *kubernetesservice.ServiceWatcher
 	dockerEventMonitor       *events.DockerEventMonitor
 	containerdEventMonitor   *events.ContainerdEventMonitor
+	kubeServiceWatcher       *events.KubeServiceWatcher
 }
 
 // setWorthCheckingIPTablesRoutine sets worthCheckingIPTables to be true
@@ -206,6 +208,12 @@ func (a *agent) Events(ctx context.Context, ch chan *api.Event) {
 
 	errorCh := make(chan error)
 	go func() {
+		if err := a.kubeServiceWatcher.MonitorServices(ctx, ch); err != nil {
+			errorCh <- err
+		}
+	}()
+
+	go func() {
 		if err := a.containerdEventMonitor.MonitorPorts(ctx, ch); err != nil {
 			errorCh <- err
 		}
@@ -229,7 +237,7 @@ func (a *agent) Events(ctx context.Context, ch chan *api.Event) {
 		case <-ctx.Done():
 			return
 		case err := <-errorCh:
-			logrus.Errorf("container engine event monitoring failed: %s", err)
+			logrus.Errorf("event monitoring failed: %s", err)
 		case _, ok := <-tickerCh:
 			if !ok {
 				return

@@ -95,7 +95,7 @@ func (d *DockerEventMonitor) MonitorPorts(ctx context.Context, ch chan *api.Even
 					}
 					logrus.Infof("successfully converted PortMapping:%+v to IPPorts: %+v", portMap, ipPorts)
 					d.runningContainers[event.ID] = ipPorts
-					sendEvent(false, ipPorts, ch)
+					sendHostAgentEvent(false, ipPorts, ch)
 				}
 			case events.ActionStop, events.ActionDie:
 				ipPorts, ok := d.runningContainers[event.ID]
@@ -103,7 +103,7 @@ func (d *DockerEventMonitor) MonitorPorts(ctx context.Context, ch chan *api.Even
 					continue
 				}
 				delete(d.runningContainers, event.ID)
-				sendEvent(true, ipPorts, ch)
+				sendHostAgentEvent(true, ipPorts, ch)
 			}
 		case err := <-errCh:
 			return fmt.Errorf("receiving container event failed: %w", err)
@@ -133,7 +133,7 @@ func (d *DockerEventMonitor) initializeRunningContainers(ctx context.Context, ch
 					Port:     int32(port.PublicPort),
 				})
 			}
-			sendEvent(false, ipPorts, ch)
+			sendHostAgentEvent(false, ipPorts, ch)
 			d.runningContainers[container.ID] = ipPorts
 		}
 	}
