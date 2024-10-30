@@ -10,18 +10,14 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 )
 
-func sendEvent(remove bool, ipPorts []*api.IPPort, ch chan *api.Event) {
-	var ev *api.Event
+func sendHostAgentEvent(remove bool, ipPorts []*api.IPPort, ch chan *api.Event) {
+	ev := &api.Event{
+		Time: timestamppb.Now(),
+	}
 	if remove {
-		ev = &api.Event{
-			LocalPortsRemoved: ipPorts,
-			Time:              timestamppb.Now(),
-		}
+		ev.LocalPortsRemoved = ipPorts
 	} else {
-		ev = &api.Event{
-			LocalPortsAdded: ipPorts,
-			Time:            timestamppb.Now(),
-		}
+		ev.LocalPortsAdded = ipPorts
 	}
 	ch <- ev
 	logrus.Infof("sent the following event to hostAgent: %+v", ev)
