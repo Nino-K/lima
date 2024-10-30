@@ -110,7 +110,7 @@ func (c *ContainerdEventMonitor) MonitorPorts(ctx context.Context, ch chan *api.
 				logrus.Debugf("received the following startTask: %v for: %v", startTask, ipPorts)
 
 				if len(ipPorts) != 0 {
-					sendEvent(false, ipPorts, ch)
+					sendHostAgentEvent(false, ipPorts, ch)
 					c.runningContainers[startTask.ContainerID] = ipPorts
 				}
 
@@ -133,9 +133,9 @@ func (c *ContainerdEventMonitor) MonitorPorts(ctx context.Context, ch chan *api.
 				if exsitingipPorts, ok := c.runningContainers[cuEvent.ID]; ok {
 					if !ipPortsEqual(ipPorts, exsitingipPorts) {
 						// first remove the existing entry
-						sendEvent(true, exsitingipPorts, ch)
+						sendHostAgentEvent(true, exsitingipPorts, ch)
 						// then update with the new entry
-						sendEvent(false, ipPorts, ch)
+						sendHostAgentEvent(false, ipPorts, ch)
 						c.runningContainers[cuEvent.ID] = ipPorts
 					}
 				}
@@ -156,7 +156,7 @@ func (c *ContainerdEventMonitor) MonitorPorts(ctx context.Context, ch chan *api.
 				logrus.Debugf("received the following exitTask: %v for: %v", exitTask, ipPorts)
 
 				if len(ipPorts) != 0 {
-					sendEvent(true, ipPorts, ch)
+					sendHostAgentEvent(true, ipPorts, ch)
 					delete(c.runningContainers, exitTask.ContainerID)
 				}
 			}
@@ -197,7 +197,7 @@ func (c *ContainerdEventMonitor) initializeRunningContainers(ctx context.Context
 			logrus.Errorf("creating IPPorts, while initializing containers the following: %v failed: %s", container.ID(), err)
 		}
 
-		sendEvent(false, ipPorts, ch)
+		sendHostAgentEvent(false, ipPorts, ch)
 	}
 
 	return nil
