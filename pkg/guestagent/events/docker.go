@@ -34,14 +34,18 @@ func NewDockerEventMonitor() *DockerEventMonitor {
 func (d *DockerEventMonitor) createAndVerifyClient(ctx context.Context) (bool, error) {
 	cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
 	if err != nil {
-		return false, fmt.Errorf("error creating Docker client: %s", err)
+		logrus.Tracef("error creating Docker client: %s", err)
+		return false, nil
 	}
 
 	_, err = cli.Info(ctx)
 	if err != nil {
-		return false, fmt.Errorf("error getting Docker info: %s", err)
+		logrus.Tracef("error getting Docker info: %s", err)
+		return false, nil
 	}
+
 	d.dockerClient = cli
+	logrus.Info("successfully connected to docker daemon")
 	return true, nil
 }
 
