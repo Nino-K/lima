@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/lima-vm/lima/pkg/guestagent/api"
+	"github.com/lima-vm/lima/v2/pkg/guestagent/api"
 	"github.com/sirupsen/logrus"
 	"golang.org/x/sys/unix"
 	corev1 "k8s.io/api/core/v1"

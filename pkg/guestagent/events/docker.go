@@ -12,7 +12,7 @@ import (
 	"github.com/docker/docker/api/types/filters"
 	"github.com/docker/docker/client"
 	"github.com/docker/go-connections/nat"
-	"github.com/lima-vm/lima/pkg/guestagent/api"
+	"github.com/lima-vm/lima/v2/pkg/guestagent/api"
 	"github.com/sirupsen/logrus"
 )
 

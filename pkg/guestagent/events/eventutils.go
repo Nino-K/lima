@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/lima-vm/lima/pkg/guestagent/api"
+	"github.com/lima-vm/lima/v2/pkg/guestagent/api"
 	"github.com/sirupsen/logrus"
 	"google.golang.org/protobuf/types/known/timestamppb"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -15,9 +15,9 @@ func sendHostAgentEvent(remove bool, ipPorts []*api.IPPort, ch chan *api.Event) 
 		Time: timestamppb.Now(),
 	}
 	if remove {
-		ev.LocalPortsRemoved = ipPorts
+		ev.RemovedLocalPorts = ipPorts
 	} else {
-		ev.LocalPortsAdded = ipPorts
+		ev.AddedLocalPorts = ipPorts
 	}
 	ch <- ev
 	logrus.Infof("sent the following event to hostAgent: %+v", ev)
