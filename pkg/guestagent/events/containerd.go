@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Copyright The Lima Authors
+// SPDX-License-Identifier: Apache-2.0
+
 package events
 
 import (
@@ -9,11 +12,11 @@ import (
 
 	"github.com/containerd/containerd"
 	"github.com/containerd/containerd/api/events"
-	"github.com/lima-vm/lima/pkg/guestagent/api"
-	"github.com/sirupsen/logrus"
-	"github.com/gogo/protobuf/proto"
-
 	containerdNamespace "github.com/containerd/containerd/namespaces"
+	"github.com/gogo/protobuf/proto"
+	"github.com/sirupsen/logrus"
+
+	"github.com/lima-vm/lima/pkg/guestagent/api"
 )
 
 const (

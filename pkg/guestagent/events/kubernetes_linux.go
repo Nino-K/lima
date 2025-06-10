@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Copyright The Lima Authors
+// SPDX-License-Identifier: Apache-2.0
+
 package events
 
 import (
@@ -9,7 +12,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/lima-vm/lima/pkg/guestagent/api"
 	"github.com/sirupsen/logrus"
 	"golang.org/x/sys/unix"
 	corev1 "k8s.io/api/core/v1"
@@ -19,6 +21,8 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/clientcmd"
+
+	"github.com/lima-vm/lima/pkg/guestagent/api"
 )
 
 type event struct {

@@ -164,10 +164,11 @@ require (
 )
 
 require (
-	github.com/containerd/containerd v1.6.23
+	github.com/containerd/containerd v1.6.38
+	github.com/containerd/errdefs v0.1.0 // indirect
 	github.com/containerd/typeurl v1.0.2 // indirect
 	github.com/gogo/googleapis v1.4.0 // indirect
-	github.com/opencontainers/runc v1.1.5 // indirect
+	github.com/moby/sys/user v0.1.0 // indirect
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp v1.37.0 // indirect
 	go.opentelemetry.io/otel/sdk v1.37.0 // indirect
 )

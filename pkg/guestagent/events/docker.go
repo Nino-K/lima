@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Copyright The Lima Authors
+// SPDX-License-Identifier: Apache-2.0
+
 package events
 
 import (
@@ -12,8 +15,9 @@ import (
 	"github.com/docker/docker/api/types/filters"
 	"github.com/docker/docker/client"
 	"github.com/docker/go-connections/nat"
-	"github.com/lima-vm/lima/pkg/guestagent/api"
 	"github.com/sirupsen/logrus"
+
+	"github.com/lima-vm/lima/pkg/guestagent/api"
 )
 
 type DockerEventMonitor struct {

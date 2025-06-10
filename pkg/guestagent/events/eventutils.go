@@ -1,13 +1,17 @@
+// SPDX-FileCopyrightText: Copyright The Lima Authors
+// SPDX-License-Identifier: Apache-2.0
+
 package events
 
 import (
 	"context"
 	"time"
 
-	"github.com/lima-vm/lima/pkg/guestagent/api"
 	"github.com/sirupsen/logrus"
 	"google.golang.org/protobuf/types/known/timestamppb"
 	"k8s.io/apimachinery/pkg/util/wait"
+
+	"github.com/lima-vm/lima/pkg/guestagent/api"
 )
 
 func sendHostAgentEvent(remove bool, ipPorts []*api.IPPort, ch chan *api.Event) {
