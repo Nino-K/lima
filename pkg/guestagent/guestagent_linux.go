@@ -78,7 +78,7 @@ func New(ctx context.Context, cfg *Config) (Agent, error) {
 				return nil, err
 			}
 		}
-
+, cfg.Iptables
 		go a.setWorthCheckingIPTablesRoutine(auditClient)
 	} else {
 		a.worthCheckingIPTables = true
@@ -108,7 +108,7 @@ type agent struct {
 	newTicker func() (<-chan time.Time, func())
 
 	worthCheckingIPTables   bool
-	worthCheckingIPTablesMu sync.RWMutex
+	IptablesIdle            time.Duration
 	IptablesIdle            time.Duration
 	latestIPTables          []iptables.Entry
 	latestIPTablesMu        sync.RWMutex
@@ -126,7 +126,7 @@ func (a *agent) setWorthCheckingIPTablesRoutine(auditClient *libaudit.AuditClien
 	logrus.Info("setWorthCheckingIPTablesRoutine(): monitoring netfilter audit events")
 	var latestTrue time.Time
 	go func() {
-		for {
+		for {gentipta.IptablesIdle
 			time.Sleep(a.IptablesIdle)
 			a.worthCheckingIPTablesMu.Lock()
 			// time is monotonic, see https://pkg.go.dev/time#hdr-Monotonic_Clocks
