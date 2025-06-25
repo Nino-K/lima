@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/containerd/containerd"
 	"github.com/containerd/containerd/api/events"
@@ -20,67 +21,79 @@ import (
 )
 
 const (
-	portsKey     = "nerdctl/ports"
-	namespaceKey = "nerdctl/namespace"
+	portsKey             = "nerdctl/ports"
+	namespaceKey         = "nerdctl/namespace"
+	defaultSocketTimeout = 5 * time.Second
 )
 
 type ContainerdEventMonitor struct {
-	containerdClient  *containerd.Client
+	clients           []*containerd.Client
 	runningContainers map[string][]*api.IPPort
 }
 
-func NewContainerdEventMonitor() *ContainerdEventMonitor {
-	return &ContainerdEventMonitor{
-		runningContainers: make(map[string][]*api.IPPort),
-	}
-}
-
-func (c *ContainerdEventMonitor) createAndVerifyClient(ctx context.Context) (bool, error) {
-	containerdSockets := []string{
-		"/run/k3s/containerd/containerd.sock",
-		"/run/containerd/containerd.sock",
-	}
-
-	for _, socket := range containerdSockets {
+func NewContainerdEventMonitor(socketPaths []string) (*ContainerdEventMonitor, error) {
+	var clients []*containerd.Client
+	for _, socket := range socketPaths {
 		logrus.Debugf("reading containerd socket %s", socket)
 		if _, err := os.Stat(socket); os.IsNotExist(err) {
+			logrus.Debugf("containerd socket %s does not exist", socket)
 			continue
 		} else if err != nil {
-			return false, nil
+			return nil, fmt.Errorf("error checking containerd socket %s: %w", socket, err)
 		}
-
 		cli, err := containerd.New(socket, containerd.WithDefaultNamespace(containerdNamespace.Default))
-		if err == nil {
-			serving, err := cli.IsServing(ctx)
-			if err != nil {
-				logrus.Tracef("error getting containerd server: %s", err)
-				return false, nil
-			}
-			c.containerdClient = cli
-			logrus.Infof("successfully connected to containerd daemon: %s", socket)
-			return serving, nil
+		if err != nil {
+			logrus.Errorf("failed to create Containerd client for socket %s: %s", socket, err)
+			continue
 		}
-
-		logrus.Tracef("error creating Containerd client: %s", err)
+		ctx, cancel := context.WithTimeout(context.Background(), defaultSocketTimeout)
+		serving, err := cli.IsServing(ctx)
+		cancel()
+		if err == nil && serving {
+			logrus.Infof("successfully connected to containerd daemon at %s", socket)
+			clients = append(clients, cli)
+		} else {
+			logrus.Errorf("error checking if containerd client for socket %s is serving: %s", socket, err)
+			cli.Close()
+		}
 	}
-
-	return false, nil
+	if len(clients) == 0 {
+		return nil, fmt.Errorf("no valid Containerd clients created from provided sockets: %v", socketPaths)
+	}
+	return &ContainerdEventMonitor{
+		clients:           clients,
+		runningContainers: make(map[string][]*api.IPPort),
+	}, nil
 }
 
 func (c *ContainerdEventMonitor) MonitorPorts(ctx context.Context, ch chan *api.Event) error {
-	if err := tryGetClient(ctx, c.createAndVerifyClient); err != nil {
-		return fmt.Errorf("failed getting containerd client: %w", err)
-	}
-	defer c.containerdClient.Close()
+	errCh := make(chan error, len(c.clients))
 
+	for _, cli := range c.clients {
+		go func(client *containerd.Client) {
+			defer client.Close()
+			if err := c.monitorClient(ctx, client, ch); err != nil {
+				errCh <- fmt.Errorf("monitoring ports failed: %w", err)
+			}
+		}(cli)
+	}
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case err := <-errCh:
+		return err
+	}
+}
+
+func (c *ContainerdEventMonitor) monitorClient(ctx context.Context, cli *containerd.Client, ch chan *api.Event) error {
 	subscribeFilters := []string{
 		`topic=="/tasks/start"`,
 		`topic=="/containers/update"`,
 		`topic=="/tasks/exit"`,
 	}
-	msgCh, errCh := c.containerdClient.Subscribe(ctx, subscribeFilters...)
+	msgCh, errCh := cli.Subscribe(ctx, subscribeFilters...)
 
-	if err := c.initializeRunningContainers(ctx, ch); err != nil {
+	if err := c.initializeRunningContainers(ctx, cli, ch); err != nil {
 		logrus.Errorf("failed to initialize existing containers published ports: %v", err)
 	}
 
@@ -104,7 +117,7 @@ func (c *ContainerdEventMonitor) MonitorPorts(ctx context.Context, ch chan *api.
 					continue
 				}
 
-				ipPorts, err := c.createIPPort(ctx, envelope.Namespace, startTask.ContainerID)
+				ipPorts, err := c.createIPPort(ctx, cli, envelope.Namespace, startTask.ContainerID)
 				if err != nil {
 					logrus.Errorf("creating IPPorts, for the following start task: %v failed: %s", startTask, err)
 					continue
@@ -125,7 +138,7 @@ func (c *ContainerdEventMonitor) MonitorPorts(ctx context.Context, ch chan *api.
 					continue
 				}
 
-				ipPorts, err := c.createIPPort(ctx, envelope.Namespace, cuEvent.ID)
+				ipPorts, err := c.createIPPort(ctx, cli, envelope.Namespace, cuEvent.ID)
 				if err != nil {
 					logrus.Errorf("creating IPPorts, for the following exit task: %v failed: %s", cuEvent, err)
 					continue
@@ -150,7 +163,7 @@ func (c *ContainerdEventMonitor) MonitorPorts(ctx context.Context, ch chan *api.
 					continue
 				}
 
-				ipPorts, err := c.createIPPort(ctx, envelope.Namespace, exitTask.ContainerID)
+				ipPorts, err := c.createIPPort(ctx, cli, envelope.Namespace, exitTask.ContainerID)
 				if err != nil {
 					logrus.Errorf("creating IPPorts, for the following exit task: %v failed: %s", exitTask, err)
 					continue
@@ -167,25 +180,22 @@ func (c *ContainerdEventMonitor) MonitorPorts(ctx context.Context, ch chan *api.
 	}
 }
 
-func (c *ContainerdEventMonitor) initializeRunningContainers(ctx context.Context, ch chan *api.Event) error {
-	containers, err := c.containerdClient.Containers(ctx)
+func (c *ContainerdEventMonitor) initializeRunningContainers(ctx context.Context, cli *containerd.Client, ch chan *api.Event) error {
+	containers, err := cli.Containers(ctx)
 	if err != nil {
 		return err
 	}
 
 	for _, container := range containers {
 		task, err := container.Task(ctx, nil)
-		if err != nil {
+		if err != nil || task == nil {
 			logrus.Errorf("failed getting container %s task: %s", container.ID(), err)
 			continue
 		}
 
 		status, err := task.Status(ctx)
-		if err != nil {
+		if err != nil || status.Status != containerd.Running {
 			logrus.Errorf("failed getting container %s task status: %s", container.ID(), err)
-			continue
-		}
-		if status.Status != containerd.Running {
 			continue
 		}
 
@@ -195,19 +205,20 @@ func (c *ContainerdEventMonitor) initializeRunningContainers(ctx context.Context
 			continue
 		}
 
-		ipPorts, err := c.createIPPort(ctx, labels[namespaceKey], container.ID())
+		ipPorts, err := c.createIPPort(ctx, cli, labels[namespaceKey], container.ID())
 		if err != nil {
 			logrus.Errorf("creating IPPorts, while initializing containers the following: %v failed: %s", container.ID(), err)
 		}
 
 		sendHostAgentEvent(false, ipPorts, ch)
+		c.runningContainers[container.ID()] = ipPorts
 	}
 
 	return nil
 }
 
-func (c *ContainerdEventMonitor) createIPPort(ctx context.Context, namespace, containerID string) ([]*api.IPPort, error) {
-	container, err := c.containerdClient.ContainerService().Get(
+func (c *ContainerdEventMonitor) createIPPort(ctx context.Context, cli *containerd.Client, namespace, containerID string) ([]*api.IPPort, error) {
+	container, err := cli.ContainerService().Get(
 		containerdNamespace.WithNamespace(ctx, namespace), containerID)
 	if err != nil {
 		return nil, err

@@ -37,10 +37,16 @@ func New(cfg *Config) (Agent, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	containerdEventMonitor, err := events.NewContainerdEventMonitor(cfg.ContainerdSockets)
+	if err != nil {
+		return nil, err
+	}
+
 	a := &agent{
 		newTicker:              cfg.Ticker,
 		dockerEventMonitor:     dockerEventMonitor,
-		containerdEventMonitor: events.NewContainerdEventMonitor(),
+		containerdEventMonitor: containerdEventMonitor,
 		kubeServiceWatcher:     events.NewKubeServiceWatcher(),
 	}
 

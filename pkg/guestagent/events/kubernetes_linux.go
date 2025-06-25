@@ -21,6 +21,7 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/clientcmd"
+	"k8s.io/apimachinery/pkg/util/wait"
 
 	"github.com/lima-vm/lima/pkg/guestagent/api"
 )
@@ -283,4 +284,10 @@ func isTimeout(err error) bool {
 // against the real error object using errors.Is().
 func isAPINotReady(err error) bool {
 	return strings.Contains(err.Error(), "apiserver not ready") || strings.Contains(err.Error(), "starting")
+}
+
+func tryGetClient(ctx context.Context, tryConnect func(context.Context) (bool, error)) error {
+	const retryInterval = 10 * time.Second
+	const pollImmediately = true
+	return wait.PollUntilContextCancel(ctx, retryInterval, pollImmediately, tryConnect)
 }
