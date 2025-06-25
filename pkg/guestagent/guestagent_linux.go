@@ -33,11 +33,21 @@ type Config struct {
 }
 
 func New(ctx context.Context, cfg *Config) (Agent, error) {
+	dockerEventMonitor, err := events.NewDockerEventMonitor(cfg.DockerSockets)
+	if err != nil {
+		return nil, err
+	}
+
+	containerdEventMonitor, err := events.NewContainerdEventMonitor(cfg.ContainerdSockets)
+	if err != nil {
+		return nil, err
+	}
+
 	a := &agent{
 		newTicker:              cfg.Ticker,
 		IptablesIdle:           cfg.IptablesIdle,
-		dockerEventMonitor:     events.NewDockerEventMonitor(),
-		containerdEventMonitor: events.NewContainerdEventMonitor(),
+		dockerEventMonitor:     dockerEventMonitor,
+		containerdEventMonitor: containerdEventMonitor,
 		kubeServiceWatcher:     events.NewKubeServiceWatcher(),
 	}
 
@@ -78,7 +88,6 @@ func New(ctx context.Context, cfg *Config) (Agent, error) {
 				return nil, err
 			}
 		}
-, cfg.Iptables
 		go a.setWorthCheckingIPTablesRoutine(auditClient)
 	} else {
 		a.worthCheckingIPTables = true
@@ -108,7 +117,7 @@ type agent struct {
 	newTicker func() (<-chan time.Time, func())
 
 	worthCheckingIPTables   bool
-	IptablesIdle            time.Duration
+	worthCheckingIPTablesMu sync.RWMutex
 	IptablesIdle            time.Duration
 	latestIPTables          []iptables.Entry
 	latestIPTablesMu        sync.RWMutex
@@ -126,7 +135,7 @@ func (a *agent) setWorthCheckingIPTablesRoutine(auditClient *libaudit.AuditClien
 	logrus.Info("setWorthCheckingIPTablesRoutine(): monitoring netfilter audit events")
 	var latestTrue time.Time
 	go func() {
-		for {gentipta.IptablesIdle
+		for {
 			time.Sleep(a.IptablesIdle)
 			a.worthCheckingIPTablesMu.Lock()
 			// time is monotonic, see https://pkg.go.dev/time#hdr-Monotonic_Clocks
