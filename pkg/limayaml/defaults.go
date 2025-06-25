@@ -593,6 +593,58 @@ func FillDefault(y, d, o *LimaYAML, filePath string, warn bool) {
 		// After defaults processing the singular HostPort and GuestPort values should not be used again.
 	}
 
+	// Manage PortMonitors sockets for Docker
+	y.PortMonitors.Docker.Sockets = slices.Concat(
+		o.PortMonitors.Docker.Sockets,
+		y.PortMonitors.Docker.Sockets,
+		d.PortMonitors.Docker.Sockets)
+
+	for i := range y.PortMonitors.Docker.Sockets {
+		if out, err := executeGuestTemplate(y.PortMonitors.Docker.Sockets[i], instDir, y.User, y.Param); err == nil {
+			y.PortMonitors.Docker.Sockets[i] = out.String()
+		} else {
+			logrus.WithError(err).Warnf("Couldn't process Docker socket %q as a template", y.PortMonitors.Docker.Sockets[i])
+		}
+	}
+
+	// Manage PortMonitors sockets for Containerd
+	y.PortMonitors.Containerd.Sockets = slices.Concat(
+		o.PortMonitors.Containerd.Sockets,
+		y.PortMonitors.Containerd.Sockets,
+		d.PortMonitors.Containerd.Sockets)
+
+	for i := range y.PortMonitors.Containerd.Sockets {
+		if out, err := executeGuestTemplate(y.PortMonitors.Containerd.Sockets[i], instDir, y.User, y.Param); err == nil {
+			y.PortMonitors.Containerd.Sockets[i] = out.String()
+		} else {
+			logrus.WithError(err).Warnf("Couldn't process Containerd socket %q as a template", y.PortMonitors.Docker.Sockets[i])
+		}
+	}
+
+	if y.Containerd.System != nil && *y.Containerd.System {
+		if out, err := executeGuestTemplate("/run/containerd/containerd.sock", instDir, y.User, y.Param); err == nil {
+			y.PortMonitors.Containerd.Sockets = unique(append(y.PortMonitors.Containerd.Sockets, out.String()))
+		} else {
+			logrus.WithError(err).Warnf("Couldn't process Containerd system socket")
+		}
+	}
+	if y.Containerd.User != nil && *y.Containerd.User {
+		if out, err := executeGuestTemplate("/run/user/{{.UID}}/containerd/containerd.sock", instDir, y.User, y.Param); err == nil {
+			y.PortMonitors.Containerd.Sockets = unique(append(y.PortMonitors.Containerd.Sockets, out.String()))
+		} else {
+			logrus.WithError(err).Warnf("Couldn't process Containerd user socket")
+		}
+	}
+
+	// Manage PortMonitors config for kubernetes
+	if y.PortMonitors.Kubernetes.ConfigPath == "" {
+		y.PortMonitors.Kubernetes.ConfigPath = d.PortMonitors.Kubernetes.ConfigPath
+	}
+
+	if o.PortMonitors.Kubernetes.ConfigPath != "" {
+		y.PortMonitors.Kubernetes.ConfigPath = o.PortMonitors.Kubernetes.ConfigPath
+	}
+
 	y.CopyToHost = slices.Concat(o.CopyToHost, y.CopyToHost, d.CopyToHost)
 	for i := range y.CopyToHost {
 		FillCopyToHostDefaults(&y.CopyToHost[i], instDir, y.User, y.Param)

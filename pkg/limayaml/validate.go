@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"net/url"
 	"os"
 	"path"
 	"path/filepath"
@@ -375,6 +376,19 @@ func Validate(y *LimaYAML, warn bool) error {
 		// Not validating that the various GuestPortRanges and HostPortRanges are not overlapping. Rules will be
 		// processed sequentially and the first matching rule for a guest port determines forwarding behavior.
 	}
+
+	for _, socket := range y.PortMonitors.Containerd.Sockets {
+		if err := validateSocket("containerd", socket); err != nil {
+			return err
+		}
+	}
+
+	for _, socket := range y.PortMonitors.Docker.Sockets {
+		if err := validateSocket("docker", socket); err != nil {
+			return err
+		}
+	}
+
 	for i, rule := range y.CopyToHost {
 		field := fmt.Sprintf("CopyToHost[%d]", i)
 		if rule.GuestFile != "" {
@@ -645,5 +659,41 @@ func ValidateAgainstLatestConfig(yNew, yLatest []byte) error {
 		return fmt.Errorf("field `disk`: shrinking the disk (%v --> %v) is not supported", *l.Disk, *n.Disk)
 	}
 
+	return nil
+}
+
+func validateSocket(engine, socket string) error {
+	if socket == "" {
+		return fmt.Errorf("%s socket path must not be empty", engine)
+	}
+
+	if strings.Contains(socket, "://") {
+		u, err := url.Parse(socket)
+		if err != nil {
+			return fmt.Errorf("%s socket path %q is not a valid URL: %w", engine, socket, err)
+		}
+		switch u.Scheme {
+		case "unix", "file":
+			if u.Path == "" {
+				return fmt.Errorf("%s socket path %q is not a valid URL: missing path", engine, socket)
+			}
+			return validateUnixSocket(engine, u.Path)
+		case "tcp":
+			if u.Host == "" {
+				return fmt.Errorf("%s socket path %q is not a valid URL: missing host", engine, socket)
+			}
+			return nil
+		default:
+			return fmt.Errorf("%s socket path %q is not a valid URL: unsupported scheme %q", engine, socket, u.Scheme)
+		}
+	}
+
+	return validateUnixSocket(engine, socket)
+}
+
+func validateUnixSocket(engine, path string) error {
+	if !filepath.IsAbs(path) {
+		return fmt.Errorf("%s socket path must be absolute, got %s", engine, path)
+	}
 	return nil
 }

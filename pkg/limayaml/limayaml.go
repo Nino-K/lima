@@ -36,6 +36,7 @@ type LimaYAML struct {
 	GuestInstallPrefix    *string       `yaml:"guestInstallPrefix,omitempty" json:"guestInstallPrefix,omitempty" jsonschema:"nullable"`
 	Probes                []Probe       `yaml:"probes,omitempty" json:"probes,omitempty"`
 	PortForwards          []PortForward `yaml:"portForwards,omitempty" json:"portForwards,omitempty"`
+	PortMonitors          PortMonitor   `yaml:"portMonitors,omitempty" json:"portMonitors,omitempty" jsonschema:"nullable"`
 	CopyToHost            []CopyToHost  `yaml:"copyToHost,omitempty" json:"copyToHost,omitempty"`
 	Message               string        `yaml:"message,omitempty" json:"message,omitempty"`
 	Networks              []Network     `yaml:"networks,omitempty" json:"networks,omitempty" jsonschema:"nullable"`
@@ -316,4 +317,19 @@ type CACertificates struct {
 	RemoveDefaults *bool    `yaml:"removeDefaults,omitempty" json:"removeDefaults,omitempty" jsonschema:"nullable"` // default: false
 	Files          []string `yaml:"files,omitempty" json:"files,omitempty" jsonschema:"nullable"`
 	Certs          []string `yaml:"certs,omitempty" json:"certs,omitempty" jsonschema:"nullable"`
+}
+
+// Engine is the name of the container engine, e.g. "docker", "containerd".
+type Engine struct {
+	Sockets []string `yaml:"sockets,omitempty" json:"sockets,omitempty"`
+}
+
+type Kubernetes struct {
+	ConfigPath string `yaml:"configPath,omitempty" json:"configPath,omitempty"`
+}
+
+type PortMonitor struct {
+	Docker     Engine     `yaml:"docker,omitempty" json:"docker,omitempty"`
+	Containerd Engine     `yaml:"containerd,omitempty" json:"containerd,omitempty"`
+	Kubernetes Kubernetes `yaml:"kubernetes,omitempty" json:"kubernetes,omitempty"`
 }
