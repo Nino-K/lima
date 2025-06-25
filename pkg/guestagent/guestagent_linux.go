@@ -24,9 +24,18 @@ import (
 	"github.com/lima-vm/lima/v2/pkg/guestagent/timesync"
 )
 
-func New(ctx context.Context, newTicker func() (<-chan time.Time, func()), iptablesIdle time.Duration) (Agent, error) {
+type Config struct {
+	Ticker            func() (<-chan time.Time, func())
+	IptablesIdle      time.Duration
+	DockerSockets     []string
+	ContainerdSockets []string
+	KubernetesConfig  string
+}
+
+func New(ctx context.Context, cfg *Config) (Agent, error) {
 	a := &agent{
-		newTicker:              newTicker,
+		newTicker:              cfg.Ticker,
+		IptablesIdle:           cfg.IptablesIdle,
 		dockerEventMonitor:     events.NewDockerEventMonitor(),
 		containerdEventMonitor: events.NewContainerdEventMonitor(),
 		kubeServiceWatcher:     events.NewKubeServiceWatcher(),
@@ -41,7 +50,7 @@ func New(ctx context.Context, newTicker func() (<-chan time.Time, func()), iptab
 			return nil, err
 		}
 		logrus.Infof("Auditing is not available: %s", err)
-		return startGuestAgentRoutines(ctx, a, false), nil
+		return startGuestAgentRoutines(a, false), nil
 	}
 
 	auditStatus, err := auditClient.GetStatus()
@@ -52,7 +61,7 @@ func New(ctx context.Context, newTicker func() (<-chan time.Time, func()), iptab
 			return nil, err
 		}
 		logrus.Infof("Auditing is not permitted: %s", err)
-		return startGuestAgentRoutines(ctx, a, false), nil
+		return startGuestAgentRoutines(a, false), nil
 	}
 
 	if auditStatus.Enabled == 0 {
@@ -70,12 +79,12 @@ func New(ctx context.Context, newTicker func() (<-chan time.Time, func()), iptab
 			}
 		}
 
-		go a.setWorthCheckingIPTablesRoutine(auditClient, iptablesIdle)
+		go a.setWorthCheckingIPTablesRoutine(auditClient)
 	} else {
 		a.worthCheckingIPTables = true
 	}
 	logrus.Infof("Auditing enabled (%d)", auditStatus.Enabled)
-	return startGuestAgentRoutines(ctx, a, true), nil
+	return startGuestAgentRoutines(a, true), nil
 }
 
 // startGuestAgentRoutines sets worthCheckingIPTables to true if auditing is not supported,
@@ -83,7 +92,7 @@ func New(ctx context.Context, newTicker func() (<-chan time.Time, func()), iptab
 //
 // Auditing is not supported in a kernels and is not currently supported outside of the initial namespace, so does not work
 // from inside a container or WSL2 instance, for example.
-func startGuestAgentRoutines(ctx context.Context, a *agent, supportsAuditing bool) *agent {
+func startGuestAgentRoutines(a *agent, supportsAuditing bool) *agent {
 	if !supportsAuditing {
 		a.worthCheckingIPTables = true
 	}
@@ -100,6 +109,7 @@ type agent struct {
 
 	worthCheckingIPTables   bool
 	worthCheckingIPTablesMu sync.RWMutex
+	IptablesIdle            time.Duration
 	latestIPTables          []iptables.Entry
 	latestIPTablesMu        sync.RWMutex
 	dockerEventMonitor      *events.DockerEventMonitor
@@ -112,16 +122,16 @@ type agent struct {
 //
 // setWorthCheckingIPTablesRoutine sets worthCheckingIPTables to be false
 // when no NETFILTER_CFG audit message was received for the iptablesIdle time.
-func (a *agent) setWorthCheckingIPTablesRoutine(auditClient *libaudit.AuditClient, iptablesIdle time.Duration) {
+func (a *agent) setWorthCheckingIPTablesRoutine(auditClient *libaudit.AuditClient) {
 	logrus.Info("setWorthCheckingIPTablesRoutine(): monitoring netfilter audit events")
 	var latestTrue time.Time
 	go func() {
 		for {
-			time.Sleep(iptablesIdle)
+			time.Sleep(a.IptablesIdle)
 			a.worthCheckingIPTablesMu.Lock()
 			// time is monotonic, see https://pkg.go.dev/time#hdr-Monotonic_Clocks
 			elapsedSinceLastTrue := time.Since(latestTrue)
-			if elapsedSinceLastTrue >= iptablesIdle {
+			if elapsedSinceLastTrue >= a.IptablesIdle {
 				logrus.Debug("setWorthCheckingIPTablesRoutine(): setting to false")
 				a.worthCheckingIPTables = false
 			}
