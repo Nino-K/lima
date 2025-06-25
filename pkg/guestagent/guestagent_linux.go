@@ -24,18 +24,22 @@ import (
 	"github.com/lima-vm/lima/pkg/guestagent/timesync"
 )
 
-type Config struct{
-	Ticker func() (<-chan time.Time, func())
-	IptablesIdle time.Duration
-	DockerSockets []string
+type Config struct {
+	Ticker            func() (<-chan time.Time, func())
+	IptablesIdle      time.Duration
+	DockerSockets     []string
 	ContainerdSockets []string
-	KubernetesConfig string
+	KubernetesConfig  string
 }
 
 func New(cfg *Config) (Agent, error) {
+	dockerEventMonitor, err := events.NewDockerEventMonitor(cfg.DockerSockets)
+	if err != nil {
+		return nil, err
+	}
 	a := &agent{
 		newTicker:              cfg.Ticker,
-		dockerEventMonitor:     events.NewDockerEventMonitor(),
+		dockerEventMonitor:     dockerEventMonitor,
 		containerdEventMonitor: events.NewContainerdEventMonitor(),
 		kubeServiceWatcher:     events.NewKubeServiceWatcher(),
 	}

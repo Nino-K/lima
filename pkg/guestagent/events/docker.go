@@ -21,7 +21,7 @@ import (
 )
 
 type DockerEventMonitor struct {
-	dockerClient *client.Client
+	dockerClients []*client.Client
 	// We maintain a record of all active containers because neither the stop nor
 	// die events provide the port mapping. As API consumers, it's our responsibility
 	// to track this information. The map uses the container ID as the key and
@@ -29,41 +29,56 @@ type DockerEventMonitor struct {
 	runningContainers map[string][]*api.IPPort
 }
 
-func NewDockerEventMonitor() *DockerEventMonitor {
+func NewDockerEventMonitor(dockerSocketPaths []string) (*DockerEventMonitor, error) {
+	var dockerClients []*client.Client
+	for _, socket := range dockerSocketPaths {
+		cli, err := client.NewClientWithOpts(client.WithHost(socket), client.WithAPIVersionNegotiation())
+		if err != nil {
+			logrus.Errorf("error creating Docker client for socket %s: %s", socket, err)
+			continue
+		}
+		if _, err := cli.Ping(context.Background()); err != nil {
+			logrus.Errorf("error pinging Docker client for socket %s: %s", socket, err)
+			continue
+		}
+		logrus.Infof("successfully connected to docker daemon at %s", socket)
+		dockerClients = append(dockerClients, cli)
+	}
+	if len(dockerClients) == 0 {
+		return nil, fmt.Errorf("no valid Docker clients created from provided sockets: %v", dockerSocketPaths)
+	}
 	return &DockerEventMonitor{
+		dockerClients:     dockerClients,
 		runningContainers: make(map[string][]*api.IPPort),
-	}
-}
-
-func (d *DockerEventMonitor) createAndVerifyClient(ctx context.Context) (bool, error) {
-	cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
-	if err != nil {
-		logrus.Tracef("error creating Docker client: %s", err)
-		return false, nil
-	}
-
-	_, err = cli.Info(ctx)
-	if err != nil {
-		logrus.Tracef("error getting Docker info: %s", err)
-		return false, nil
-	}
-
-	d.dockerClient = cli
-	logrus.Info("successfully connected to docker daemon")
-	return true, nil
+	}, nil
 }
 
 func (d *DockerEventMonitor) MonitorPorts(ctx context.Context, ch chan *api.Event) error {
-	if err := tryGetClient(ctx, d.createAndVerifyClient); err != nil {
-		return fmt.Errorf("failed getting docker client: %w", err)
+	errCh := make(chan error, len(d.dockerClients))
+	for _, cli := range d.dockerClients {
+		go func(c *client.Client) {
+			if err := d.monitorClient(ctx, c, ch); err != nil {
+				errCh <- fmt.Errorf("monitoring ports failed: %w", err)
+			}
+		}(cli)
 	}
-	defer d.dockerClient.Close()
 
-	if err := d.initializeRunningContainers(ctx, ch); err != nil {
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case err := <-errCh:
+		return err
+	}
+}
+
+func (d *DockerEventMonitor) monitorClient(ctx context.Context, cli *client.Client, ch chan *api.Event) error {
+	defer cli.Close()
+
+	if err := d.initializeRunningContainers(ctx, cli, ch); err != nil {
 		logrus.Errorf("failed to initialize existing docker container published ports: %s", err)
 	}
 
-	msgCh, errCh := d.dockerClient.Events(ctx, events.ListOptions{
+	msgCh, errCh := cli.Events(ctx, events.ListOptions{
 		Filters: filters.NewArgs(
 			filters.Arg("type", string(types.ContainerObject)),
 			filters.Arg("event", string(events.ActionStart)),
@@ -77,7 +92,7 @@ func (d *DockerEventMonitor) MonitorPorts(ctx context.Context, ch chan *api.Even
 			return fmt.Errorf("context cancellation: %w", ctx.Err())
 
 		case event := <-msgCh:
-			container, err := d.dockerClient.ContainerInspect(ctx, event.ID)
+			container, err := cli.ContainerInspect(ctx, event.ID)
 			if err != nil {
 				logrus.Errorf("inspecting container [%v] failed: %v", event.ID, err)
 				continue
@@ -115,8 +130,8 @@ func (d *DockerEventMonitor) MonitorPorts(ctx context.Context, ch chan *api.Even
 	}
 }
 
-func (d *DockerEventMonitor) initializeRunningContainers(ctx context.Context, ch chan *api.Event) error {
-	containers, err := d.dockerClient.ContainerList(ctx, container.ListOptions{
+func (d *DockerEventMonitor) initializeRunningContainers(ctx context.Context, cli *client.Client, ch chan *api.Event) error {
+	containers, err := cli.ContainerList(ctx, container.ListOptions{
 		Filters: filters.NewArgs(filters.Arg("status", "running")),
 	})
 	if err != nil {
