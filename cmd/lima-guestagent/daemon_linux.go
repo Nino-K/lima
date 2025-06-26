@@ -63,7 +63,7 @@ func daemonAction(cmd *cobra.Command, _ []string) error {
 	if err != nil {
 		return err
 	}
-	kubernetesConfig, err := cmd.Flags().GetString("kubernetes-config")
+	kubernetesConfig, err := cmd.Flags().GetStringSlice("kubernetes-config")
 	if err != nil {
 		return err
 	}
@@ -84,7 +84,7 @@ func daemonAction(cmd *cobra.Command, _ []string) error {
 			IptablesIdle:      tick * 20,
 			DockerSockets:     dockerSockets,
 			ContainerdSockets: containerdSockets,
-			KubernetesConfig:  kubernetesConfig,
+			KubernetesConfigs: kubernetesConfig,
 		})
 	if err != nil {
 		return err

@@ -34,20 +34,22 @@ type event struct {
 }
 
 type KubeServiceWatcher struct {
-	kubeClient kubernetes.Interface
-	eventCh    chan event
-	errorCh    chan error
+	kubeConfigPaths []string
+	kubeClient      kubernetes.Interface
+	eventCh         chan event
+	errorCh         chan error
 }
 
-func NewKubeServiceWatcher() *KubeServiceWatcher {
+func NewKubeServiceWatcher(cfgPaths []string) *KubeServiceWatcher {
 	return &KubeServiceWatcher{
-		eventCh: make(chan event),
-		errorCh: make(chan error),
+		kubeConfigPaths: cfgPaths,
+		eventCh:         make(chan event),
+		errorCh:         make(chan error),
 	}
 }
 
 func (k *KubeServiceWatcher) createAndVerifyClient(ctx context.Context) (bool, error) {
-	kubeClient, err := tryGetKubeClient()
+	kubeClient, err := tryGetKubeClient(k.kubeConfigPaths)
 	if err != nil {
 		logrus.Tracef("failed to get kube client: %s", err)
 		return false, nil
@@ -223,12 +225,7 @@ func sendEvents(mapping map[int32]corev1.Protocol, svc *corev1.Service, deleted 
 	}
 }
 
-func tryGetKubeClient() (kubernetes.Interface, error) {
-	candidateKubeConfigs := []string{
-		"/etc/rancher/k3s/k3s.yaml",
-		"/root/.kube/config",
-	}
-
+func tryGetKubeClient(candidateKubeConfigs []string) (kubernetes.Interface, error) {
 	for _, kubeconfig := range candidateKubeConfigs {
 		_, err := os.Stat(kubeconfig)
 		if err != nil {

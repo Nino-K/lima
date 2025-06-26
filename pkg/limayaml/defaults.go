@@ -571,13 +571,10 @@ func FillDefault(ctx context.Context, y, d, o *limatype.LimaYAML, filePath strin
 	}
 
 	// Manage PortMonitors config for kubernetes
-	if y.PortMonitors.Kubernetes.ConfigPath == "" {
-		y.PortMonitors.Kubernetes.ConfigPath = d.PortMonitors.Kubernetes.ConfigPath
-	}
-
-	if o.PortMonitors.Kubernetes.ConfigPath != "" {
-		y.PortMonitors.Kubernetes.ConfigPath = o.PortMonitors.Kubernetes.ConfigPath
-	}
+	y.PortMonitors.Kubernetes.Configs = unique(slices.Concat(
+		o.PortMonitors.Kubernetes.Configs,
+		y.PortMonitors.Kubernetes.Configs,
+		d.PortMonitors.Kubernetes.Configs))
 
 	y.CopyToHost = slices.Concat(o.CopyToHost, y.CopyToHost, d.CopyToHost)
 	for i := range y.CopyToHost {
