@@ -1,3 +1,6 @@
+//go:build linux
+// +build linux
+
 // SPDX-FileCopyrightText: Copyright The Lima Authors
 // SPDX-License-Identifier: Apache-2.0
 
