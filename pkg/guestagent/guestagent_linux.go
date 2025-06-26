@@ -29,7 +29,7 @@ type Config struct {
 	IptablesIdle      time.Duration
 	DockerSockets     []string
 	ContainerdSockets []string
-	KubernetesConfig  string
+	KubernetesConfigs []string
 }
 
 func New(cfg *Config) (Agent, error) {
@@ -43,11 +43,13 @@ func New(cfg *Config) (Agent, error) {
 		return nil, err
 	}
 
+	kubeServiceWatcher := events.NewKubeServiceWatcher(cfg.KubernetesConfigs)
+
 	a := &agent{
 		newTicker:              cfg.Ticker,
 		dockerEventMonitor:     dockerEventMonitor,
 		containerdEventMonitor: containerdEventMonitor,
-		kubeServiceWatcher:     events.NewKubeServiceWatcher(),
+		kubeServiceWatcher:     kubeServiceWatcher,
 	}
 
 	auditClient, err := libaudit.NewMulticastAuditClient(nil)

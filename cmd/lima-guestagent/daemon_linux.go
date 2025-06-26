@@ -30,7 +30,7 @@ func newDaemonCommand() *cobra.Command {
 	daemonCommand.Flags().String("virtio-port", "", "Use virtio server instead a UNIX socket")
 	daemonCommand.Flags().StringSlice("docker-sockets", []string{}, "Paths to Docker socket files to monitor for exposed ports")
 	daemonCommand.Flags().StringSlice("containerd-sockets", []string{}, "Paths to Containerd socket files to monitor for exposed ports")
-	daemonCommand.Flags().String("kubernetes-config", "", "Path to Kubernetes config file to monitor for ports")
+	daemonCommand.Flags().StringSlice("kubernetes-configs", []string{}, "Path to Kubernetes config files to monitor for ports")
 	return daemonCommand
 }
 
@@ -62,7 +62,7 @@ func daemonAction(cmd *cobra.Command, _ []string) error {
 	if err != nil {
 		return err
 	}
-	kubernetesConfig, err := cmd.Flags().GetString("kubernetes-config")
+	kubernetesConfigs, err := cmd.Flags().GetStringSlice("kubernetes-configs")
 	if err != nil {
 		return err
 	}
@@ -78,11 +78,11 @@ func daemonAction(cmd *cobra.Command, _ []string) error {
 	}
 
 	agent, err := guestagent.New(&guestagent.Config{
-		Ticker: newTicker,
+		Ticker:            newTicker,
 		IptablesIdle:      tick * 20,
 		DockerSockets:     dockerSockets,
 		ContainerdSockets: containerdSockets,
-		KubernetesConfig:  kubernetesConfig,
+		KubernetesConfigs: kubernetesConfigs,
 	})
 	if err != nil {
 		return err

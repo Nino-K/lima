@@ -325,7 +325,7 @@ type Engine struct {
 }
 
 type Kubernetes struct {
-	ConfigPath string `yaml:"configPath,omitempty" json:"configPath,omitempty"`
+	Configs []string `yaml:"configs,omitempty" json:"configs,omitempty"` // Paths to Kubernetes config files, e.g. "/etc/rancher/k3s/k3s.yaml"
 }
 
 type PortMonitor struct {
