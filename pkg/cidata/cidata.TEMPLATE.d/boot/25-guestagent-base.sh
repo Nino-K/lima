@@ -59,21 +59,35 @@ else
 
 	docker_args=""
 	if [ -n "${LIMA_CIDATA_DOCKER_PORT_MONITOR_SOCKETS}" ]; then
-		docker_args="--docker-sockets \"${LIMA_CIDATA_DOCKER_PORT_MONITOR_SOCKETS}\""
+		docker_args="--docker-sockets=${LIMA_CIDATA_DOCKER_PORT_MONITOR_SOCKETS}"
 	fi
+
 	containerd_args=""
 	if [ -n "${LIMA_CIDATA_CONTAINERD_PORT_MONITOR_SOCKETS}" ]; then
-		containerd_args="--containerd-sockets \"${LIMA_CIDATA_CONTAINERD_PORT_MONITOR_SOCKETS}\""
+		containerd_args="--containerd-sockets=${LIMA_CIDATA_CONTAINERD_PORT_MONITOR_SOCKETS}"
 	fi
+
 	kubernetes_args=""
 	if [ -n "${LIMA_CIDATA_KUBERNETES_SERVICE_WATCHER_CONFIGS}" ]; then
-		kubernetes_args="--kubernetes-configs \"${LIMA_CIDATA_KUBERNETES_SERVICE_WATCHER_CONFIGS}\""
+		kubernetes_args="--kubernetes-configs=${LIMA_CIDATA_KUBERNETES_SERVICE_WATCHER_CONFIGS}"
 	fi
+
 	if [ "${LIMA_CIDATA_VSOCK_PORT}" != "0" ]; then
-		sudo "${LIMA_CIDATA_GUEST_INSTALL_PREFIX}"/bin/lima-guestagent install-systemd --vsock-port "${LIMA_CIDATA_VSOCK_PORT}" ${docker_args} ${containerd_args} ${kubernetes_args}
-	elif [ "${LIMA_CIDATA_VIRTIO_PORT}" != "" ]; then
-		sudo "${LIMA_CIDATA_GUEST_INSTALL_PREFIX}"/bin/lima-guestagent install-systemd --virtio-port "${LIMA_CIDATA_VIRTIO_PORT}" ${docker_args} ${containerd_args} ${kubernetes_args}
+		sudo "${LIMA_CIDATA_GUEST_INSTALL_PREFIX}/bin/lima-guestagent" install-systemd \
+			--vsock-port "${LIMA_CIDATA_VSOCK_PORT}" \
+			${docker_args:+${docker_args}} \
+			${containerd_args:+${containerd_args}} \
+			${kubernetes_args:+${kubernetes_args}}
+	elif [ -n "${LIMA_CIDATA_VIRTIO_PORT}" ]; then
+		sudo "${LIMA_CIDATA_GUEST_INSTALL_PREFIX}/bin/lima-guestagent" install-systemd \
+			--virtio-port "${LIMA_CIDATA_VIRTIO_PORT}" \
+			${docker_args:+${docker_args}} \
+			${containerd_args:+${containerd_args}} \
+			${kubernetes_args:+${kubernetes_args}}
 	else
-		sudo "${LIMA_CIDATA_GUEST_INSTALL_PREFIX}"/bin/lima-guestagent install-systemd ${docker_args} ${containerd_args} ${kubernetes_args}
+		sudo "${LIMA_CIDATA_GUEST_INSTALL_PREFIX}/bin/lima-guestagent" install-systemd \
+			${docker_args:+${docker_args}} \
+			${containerd_args:+${containerd_args}} \
+			${kubernetes_args:+${kubernetes_args}}
 	fi
 fi
