@@ -65,18 +65,11 @@ type Disk struct {
 	FSType string
 	FSArgs []string
 }
-type Engine struct {
-	Sockets []string
-}
-
-type Kubernetes struct {
-	Configs []string
-}
 
 type PortMonitor struct {
-	Docker     Engine
-	Containerd Engine
-	Kubernetes Kubernetes
+	Docker     string
+	Containerd string
+	Kubernetes string
 }
 
 type TemplateArgs struct {

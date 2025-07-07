@@ -20,6 +20,12 @@ fi
 # Install or update the guestagent binary
 install -m 755 "${LIMA_CIDATA_MNT}"/lima-guestagent "${LIMA_CIDATA_GUEST_INSTALL_PREFIX}"/bin/lima-guestagent
 
+strip_array() {
+	val="${1#[}"                 # remove leading [
+	val="${val%]}"               # remove trailing ]
+	printf '%s\n' "$val" | xargs # trim spaces
+}
+
 # Launch the guestagent service
 if [ -f /sbin/openrc-run ]; then
 	# Convert .env to conf.d by wrapping values in double quotes.
@@ -58,17 +64,20 @@ else
 	rm -f "${LIMA_CIDATA_HOME}/.config/systemd/user/lima-guestagent.service"
 
 	docker_args=""
-	if [ -n "${LIMA_CIDATA_DOCKER_PORT_MONITOR_SOCKETS}" ]; then
+	docker_items="$(strip_array "${LIMA_CIDATA_DOCKER_PORT_MONITOR_SOCKETS}")"
+	if [ -n "$docker_items" ]; then
 		docker_args="--docker-sockets=${LIMA_CIDATA_DOCKER_PORT_MONITOR_SOCKETS}"
 	fi
 
 	containerd_args=""
-	if [ -n "${LIMA_CIDATA_CONTAINERD_PORT_MONITOR_SOCKETS}" ]; then
+	containerd_items="$(strip_array "${LIMA_CIDATA_CONTAINERD_PORT_MONITOR_SOCKETS}")"
+	if [ -n "$containerd_items" ]; then
 		containerd_args="--containerd-sockets=${LIMA_CIDATA_CONTAINERD_PORT_MONITOR_SOCKETS}"
 	fi
 
 	kubernetes_args=""
-	if [ -n "${LIMA_CIDATA_KUBERNETES_SERVICE_WATCHER_CONFIGS}" ]; then
+	kubernetes_items="$(strip_array "${LIMA_CIDATA_KUBERNETES_SERVICE_WATCHER_CONFIGS}")"
+	if [ -n "$kubernetes_items" ]; then
 		kubernetes_args="--kubernetes-configs=${LIMA_CIDATA_KUBERNETES_SERVICE_WATCHER_CONFIGS}"
 	fi
 
