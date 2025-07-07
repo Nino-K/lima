@@ -145,9 +145,9 @@ func templateArgs(ctx context.Context, bootScripts bool, instDir, name string, i
 		TimeZone:   *instConfig.TimeZone,
 		Param:      instConfig.Param,
 		PortMonitor: PortMonitor{
-			Docker:     Engine{Sockets: instConfig.PortMonitors.Docker.Sockets},
-			Containerd: Engine{Sockets: instConfig.PortMonitors.Containerd.Sockets},
-			Kubernetes: Kubernetes{Configs: instConfig.PortMonitors.Kubernetes.Configs},
+			Docker:     strings.Join(instConfig.PortMonitors.Docker.Sockets, ","),
+			Containerd: strings.Join(instConfig.PortMonitors.Containerd.Sockets, ","),
+			Kubernetes: strings.Join(instConfig.PortMonitors.Kubernetes.Configs, ","),
 		},
 	}
 
