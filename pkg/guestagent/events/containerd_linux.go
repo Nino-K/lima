@@ -32,34 +32,70 @@ type ContainerdEventMonitor struct {
 }
 
 func NewContainerdEventMonitor(socketPaths []string) (*ContainerdEventMonitor, error) {
+	const (
+		maxRetries = 5
+		retryDelay = 2 * time.Second
+	)
+
 	var clients []*containerd.Client
+
 	for _, socket := range socketPaths {
 		logrus.Debugf("reading containerd socket %s", socket)
-		if _, err := os.Stat(socket); os.IsNotExist(err) {
+
+		info, err := os.Stat(socket)
+		if os.IsNotExist(err) {
 			logrus.Debugf("containerd socket %s does not exist", socket)
 			continue
 		} else if err != nil {
 			return nil, fmt.Errorf("error checking containerd socket %s: %w", socket, err)
-		}
-		cli, err := containerd.New(socket, containerd.WithDefaultNamespace(containerdNamespace.Default))
-		if err != nil {
-			logrus.Errorf("failed to create Containerd client for socket %s: %s", socket, err)
+		} else if info.IsDir() {
+			logrus.Warnf("containerd socket %s is a directory, skipping", socket)
 			continue
 		}
-		ctx, cancel := context.WithTimeout(context.Background(), defaultSocketTimeout)
-		serving, err := cli.IsServing(ctx)
-		cancel()
-		if err == nil && serving {
-			logrus.Infof("successfully connected to containerd daemon at %s", socket)
-			clients = append(clients, cli)
-		} else {
-			logrus.Errorf("error checking if containerd client for socket %s is serving: %s", socket, err)
-			cli.Close()
+
+		var cli *containerd.Client
+		var lastErr error
+
+		for attempt := 1; attempt <= maxRetries; attempt++ {
+			cli, err = containerd.New(socket, containerd.WithDefaultNamespace(containerdNamespace.Default))
+			if err != nil {
+				logrus.Warnf("attempt %d/%d: failed to create client for socket %s: %v", attempt, maxRetries, socket, err)
+				lastErr = err
+			} else {
+				ctx, cancel := context.WithTimeout(context.Background(), defaultSocketTimeout)
+				serving, serveErr := cli.IsServing(ctx)
+				cancel()
+
+				if serveErr == nil && serving {
+					logrus.Infof("successfully connected to containerd daemon at %s (attempt %d)", socket, attempt)
+					clients = append(clients, cli)
+					break
+				}
+
+				logrus.Warnf("attempt %d/%d: containerd client at %s not serving: %v", attempt, maxRetries, socket, serveErr)
+				lastErr = serveErr
+				cli.Close()
+			}
+
+			select {
+			case <-time.After(retryDelay):
+				continue
+			case <-context.Background().Done():
+				logrus.Warn("retry canceled, context done")
+				return nil, context.Canceled
+			}
+		}
+
+		if cli == nil {
+			logrus.Errorf("failed to connect to containerd at %s after %d attempts: %v", socket, maxRetries, lastErr)
 		}
 	}
+
 	if len(clients) == 0 {
-		return nil, fmt.Errorf("no valid Containerd clients created from provided sockets: %v", socketPaths)
+		logrus.Warn("no valid Containerd clients created from provided sockets")
+		return nil, nil
 	}
+
 	return &ContainerdEventMonitor{
 		clients:           clients,
 		runningContainers: make(map[string][]*api.IPPort),
