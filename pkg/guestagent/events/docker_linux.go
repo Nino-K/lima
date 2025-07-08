@@ -6,8 +6,10 @@ package events
 import (
 	"context"
 	"fmt"
+	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
@@ -30,23 +32,60 @@ type DockerEventMonitor struct {
 }
 
 func NewDockerEventMonitor(dockerSocketPaths []string) (*DockerEventMonitor, error) {
+	const (
+		maxRetries = 5
+		retryDelay = 2 * time.Second
+	)
+
 	var dockerClients []*client.Client
+
 	for _, socket := range dockerSocketPaths {
-		cli, err := client.NewClientWithOpts(client.WithHost(socket), client.WithAPIVersionNegotiation())
-		if err != nil {
-			logrus.Errorf("error creating Docker client for socket %s: %s", socket, err)
+		logrus.Debugf("attempting to read Docker socket %s", socket)
+
+		info, statErr := os.Stat(socket)
+		if os.IsNotExist(statErr) {
+			logrus.Debugf("Docker socket %s does not exist", socket)
+			continue
+		} else if statErr != nil {
+			return nil, fmt.Errorf("error checking Docker socket %s: %w", socket, statErr)
+		} else if info.IsDir() {
+			logrus.Debugf("Docker socket %s is a directory, skipping", socket)
 			continue
 		}
-		if _, err := cli.Ping(context.Background()); err != nil {
-			logrus.Errorf("error pinging Docker client for socket %s: %s", socket, err)
-			continue
+
+		var cli *client.Client
+		var err error
+
+		for attempt := 1; attempt <= maxRetries; attempt++ {
+			cli, err = client.NewClientWithOpts(client.WithHost(socket), client.WithAPIVersionNegotiation())
+			if err == nil {
+				if _, err = cli.Ping(context.Background()); err == nil {
+					logrus.Infof("successfully connected to Docker daemon at %s", socket)
+					dockerClients = append(dockerClients, cli)
+					break
+				}
+			}
+
+			logrus.Warnf("attempt %d/%d: failed to connect to Docker at %s: %s", attempt, maxRetries, socket, err)
+
+			if attempt < maxRetries {
+				select {
+				case <-time.After(retryDelay):
+				case <-context.Background().Done():
+					logrus.Warn("retry canceled, context done")
+					return nil, context.Canceled
+				}
+			} else {
+				logrus.Errorf("failed to connect to Docker at %s after %d attempts: %v", socket, maxRetries, err)
+			}
 		}
-		logrus.Infof("successfully connected to docker daemon at %s", socket)
-		dockerClients = append(dockerClients, cli)
 	}
+
 	if len(dockerClients) == 0 {
-		return nil, fmt.Errorf("no valid Docker clients created from provided sockets: %v", dockerSocketPaths)
+		logrus.Warn("no valid Docker clients created from provided sockets, please check the socket paths")
+		return nil, nil
 	}
+
 	return &DockerEventMonitor{
 		dockerClients:     dockerClients,
 		runningContainers: make(map[string][]*api.IPPort),
