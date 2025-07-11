@@ -143,6 +143,11 @@ func templateArgs(bootScripts bool, instDir, name string, instConfig *limayaml.L
 		Plain:          *instConfig.Plain,
 		TimeZone:       *instConfig.TimeZone,
 		Param:          instConfig.Param,
+		PortMonitor: PortMonitor{
+			Docker:     strings.Join(instConfig.PortMonitors.Docker.Sockets, ","),
+			Containerd: strings.Join(instConfig.PortMonitors.Containerd.Sockets, ","),
+			Kubernetes: strings.Join(instConfig.PortMonitors.Kubernetes.Configs, ","),
+		},
 	}
 
 	firstUsernetIndex := limayaml.FirstUsernetIndex(instConfig)

@@ -18,16 +18,38 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"github.com/lima-vm/lima/pkg/guestagent/api"
+	"github.com/lima-vm/lima/pkg/guestagent/events"
 	"github.com/lima-vm/lima/pkg/guestagent/iptables"
-	"github.com/lima-vm/lima/pkg/guestagent/kubernetesservice"
 	"github.com/lima-vm/lima/pkg/guestagent/procnettcp"
 	"github.com/lima-vm/lima/pkg/guestagent/timesync"
 )
 
-func New(newTicker func() (<-chan time.Time, func()), iptablesIdle time.Duration) (Agent, error) {
+type Config struct {
+	Ticker            func() (<-chan time.Time, func())
+	IptablesIdle      time.Duration
+	DockerSockets     []string
+	ContainerdSockets []string
+	KubernetesConfigs []string
+}
+
+func New(cfg *Config) (Agent, error) {
+	dockerEventMonitor, err := events.NewDockerEventMonitor(cfg.DockerSockets)
+	if err != nil {
+		return nil, err
+	}
+
+	containerdEventMonitor, err := events.NewContainerdEventMonitor(cfg.ContainerdSockets)
+	if err != nil {
+		return nil, err
+	}
+
+	kubeServiceWatcher := events.NewKubeServiceWatcher(cfg.KubernetesConfigs)
+
 	a := &agent{
-		newTicker:                newTicker,
-		kubernetesServiceWatcher: kubernetesservice.NewServiceWatcher(),
+		newTicker:              cfg.Ticker,
+		dockerEventMonitor:     dockerEventMonitor,
+		containerdEventMonitor: containerdEventMonitor,
+		kubeServiceWatcher:     kubeServiceWatcher,
 	}
 
 	auditClient, err := libaudit.NewMulticastAuditClient(nil)
@@ -68,7 +90,7 @@ func New(newTicker func() (<-chan time.Time, func()), iptablesIdle time.Duration
 			}
 		}
 
-		go a.setWorthCheckingIPTablesRoutine(auditClient, iptablesIdle)
+		go a.setWorthCheckingIPTablesRoutine(auditClient, cfg.IptablesIdle)
 	} else {
 		a.worthCheckingIPTables = true
 	}
@@ -85,7 +107,6 @@ func startGuestAgentRoutines(a *agent, supportsAuditing bool) *agent {
 	if !supportsAuditing {
 		a.worthCheckingIPTables = true
 	}
-	go a.kubernetesServiceWatcher.Start()
 	go a.fixSystemTimeSkew()
 
 	return a
@@ -97,11 +118,13 @@ type agent struct {
 	// reload /proc/net/tcp.
 	newTicker func() (<-chan time.Time, func())
 
-	worthCheckingIPTables    bool
-	worthCheckingIPTablesMu  sync.RWMutex
-	latestIPTables           []iptables.Entry
-	latestIPTablesMu         sync.RWMutex
-	kubernetesServiceWatcher *kubernetesservice.ServiceWatcher
+	worthCheckingIPTables   bool
+	worthCheckingIPTablesMu sync.RWMutex
+	latestIPTables          []iptables.Entry
+	latestIPTablesMu        sync.RWMutex
+	dockerEventMonitor      *events.DockerEventMonitor
+	containerdEventMonitor  *events.ContainerdEventMonitor
+	kubeServiceWatcher      *events.KubeServiceWatcher
 }
 
 // setWorthCheckingIPTablesRoutine sets worthCheckingIPTables to be true
@@ -197,6 +220,25 @@ func isEventEmpty(ev *api.Event) bool {
 
 func (a *agent) Events(ctx context.Context, ch chan *api.Event) {
 	defer close(ch)
+
+	errorCh := make(chan error)
+	go func() {
+		if err := a.kubeServiceWatcher.MonitorServices(ctx, ch); err != nil {
+			errorCh <- err
+		}
+	}()
+
+	go func() {
+		if err := a.containerdEventMonitor.MonitorPorts(ctx, ch); err != nil {
+			errorCh <- err
+		}
+	}()
+	go func() {
+		if err := a.dockerEventMonitor.MonitorPorts(ctx, ch); err != nil {
+			errorCh <- err
+		}
+	}()
+
 	tickerCh, tickerClose := a.newTicker()
 	defer tickerClose()
 	var st eventState
@@ -209,6 +251,8 @@ func (a *agent) Events(ctx context.Context, ch chan *api.Event) {
 		select {
 		case <-ctx.Done():
 			return
+		case err := <-errorCh:
+			logrus.Errorf("event monitoring failed: %s", err)
 		case _, ok := <-tickerCh:
 			if !ok {
 				return
@@ -287,25 +331,6 @@ func (a *agent) LocalPorts(_ context.Context) ([]*api.IPPort, error) {
 						Protocol: "tcp",
 					})
 			}
-		}
-	}
-
-	kubernetesEntries := a.kubernetesServiceWatcher.GetPorts()
-	for _, entry := range kubernetesEntries {
-		found := false
-		for _, re := range res {
-			if re.Port == int32(entry.Port) {
-				found = true
-			}
-		}
-
-		if !found {
-			res = append(res,
-				&api.IPPort{
-					Ip:       entry.IP.String(),
-					Port:     int32(entry.Port),
-					Protocol: string(entry.Protocol),
-				})
 		}
 	}
 

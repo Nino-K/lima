@@ -143,6 +143,9 @@ func TestFillDefault(t *testing.T) {
 
 	// All these slices and maps are empty in "builtin". Add minimal entries here to see that
 	// their values are retained and defaults for their fields are applied correctly.
+
+	t.Log("Builtin defaults are set when y is (mostly) empty")
+
 	y = LimaYAML{
 		HostResolver: HostResolver{
 			Hosts: map[string]string{
@@ -279,9 +282,6 @@ func TestFillDefault(t *testing.T) {
 		defaultPortForward,
 		defaultPortForward,
 	}
-	expect.CopyToHost = []CopyToHost{
-		{},
-	}
 
 	// Setting GuestPort and HostPort for DeepEqual(), but they are not supposed to be used
 	// after FillDefault() has been called and the ...PortRange fields have been set.
@@ -296,6 +296,14 @@ func TestFillDefault(t *testing.T) {
 
 	expect.PortForwards[3].GuestSocket = fmt.Sprintf("%s | %s | %s | %s", user.HomeDir, user.Uid, user.Username, y.Param["ONE"])
 	expect.PortForwards[3].HostSocket = fmt.Sprintf("%s | %s | %s | %s | %s | %s", hostHome, instDir, instName, currentUser.Uid, currentUser.Username, y.Param["ONE"])
+
+	expect.PortMonitors.Containerd.Sockets = []string{
+		fmt.Sprintf("/run/user/%s/containerd/containerd.sock", user.Uid),
+	}
+
+	expect.CopyToHost = []CopyToHost{
+		{},
+	}
 
 	expect.CopyToHost[0].GuestFile = fmt.Sprintf("%s | %s | %s | %s", user.HomeDir, user.Uid, user.Username, y.Param["ONE"])
 	expect.CopyToHost[0].HostFile = fmt.Sprintf("%s | %s | %s | %s | %s | %s", hostHome, instDir, instName, currentUser.Uid, currentUser.Username, y.Param["ONE"])
@@ -334,7 +342,11 @@ func TestFillDefault(t *testing.T) {
 	// Choose values that are different from the "builtin" defaults
 
 	// Calling filepath.Abs() to add a drive letter on Windows
+
+	t.Log("User-provided defaults should override builtin defaults")
+
 	varLog, _ := filepath.Abs("/var/log")
+	defaultUID := 8080
 	d = LimaYAML{
 		VMType: ptr.Of("vz"),
 		OS:     ptr.Of("unknown"),
@@ -462,7 +474,7 @@ func TestFillDefault(t *testing.T) {
 			Comment: ptr.Of("Foo Bar"),
 			Home:    ptr.Of("/tmp"),
 			Shell:   ptr.Of("/bin/tcsh"),
-			UID:     ptr.Of(uint32(8080)),
+			UID:     ptr.Of(uint32(defaultUID)),
 		},
 	}
 
@@ -508,6 +520,9 @@ func TestFillDefault(t *testing.T) {
 		}
 	}
 	expect.Plain = ptr.Of(false)
+	expect.PortMonitors.Containerd.Sockets = []string{
+		"/run/containerd/containerd.sock",
+	}
 
 	y = LimaYAML{}
 	FillDefault(&y, &d, &LimaYAML{}, filePath, false)
@@ -517,6 +532,8 @@ func TestFillDefault(t *testing.T) {
 
 	// ------------------------------------------------------------------------------------
 	// User-provided defaults should not override user-provided config values
+
+	t.Log("User-provided defaults should not override user-provided config values")
 
 	y = filledDefaults
 	y.DNS = []net.IP{net.ParseIP("8.8.8.8")}
@@ -555,6 +572,9 @@ func TestFillDefault(t *testing.T) {
 	// ------------------------------------------------------------------------------------
 	// User-provided overrides should override user-provided config settings
 
+	t.Log("User-provided overrides should override user-provided config settings")
+
+	overrideUID := 1122
 	o = LimaYAML{
 		VMType: ptr.Of("qemu"),
 		OS:     ptr.Of(LINUX),
@@ -694,7 +714,7 @@ func TestFillDefault(t *testing.T) {
 			Comment: ptr.Of("foo bar baz"),
 			Home:    ptr.Of("/override"),
 			Shell:   ptr.Of("/bin/sh"),
-			UID:     ptr.Of(uint32(1122)),
+			UID:     ptr.Of(uint32(overrideUID)),
 		},
 	}
 
@@ -705,6 +725,10 @@ func TestFillDefault(t *testing.T) {
 	expect.Provision = slices.Concat(o.Provision, y.Provision, dExpect.Provision)
 	expect.Probes = slices.Concat(o.Probes, y.Probes, dExpect.Probes)
 	expect.PortForwards = slices.Concat(o.PortForwards, y.PortForwards, dExpect.PortForwards)
+	expect.PortMonitors.Containerd.Sockets = []string{
+		fmt.Sprintf("/run/user/%s/containerd/containerd.sock", user.Uid),
+		"/run/containerd/containerd.sock",
+	}
 	expect.CopyToHost = slices.Concat(o.CopyToHost, y.CopyToHost, dExpect.CopyToHost)
 	expect.Containerd.Archives = slices.Concat(o.Containerd.Archives, y.Containerd.Archives, dExpect.Containerd.Archives)
 	expect.Containerd.Archives[3].Arch = *expect.Arch

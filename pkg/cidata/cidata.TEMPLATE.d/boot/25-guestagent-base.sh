@@ -20,6 +20,12 @@ fi
 # Install or update the guestagent binary
 install -m 755 "${LIMA_CIDATA_MNT}"/lima-guestagent "${LIMA_CIDATA_GUEST_INSTALL_PREFIX}"/bin/lima-guestagent
 
+strip_array() {
+	val="${1#[}"                 # remove leading [
+	val="${val%]}"               # remove trailing ]
+	printf '%s\n' "$val" | xargs # trim spaces
+}
+
 # Launch the guestagent service
 if [ -f /sbin/openrc-run ]; then
 	# Convert .env to conf.d by wrapping values in double quotes.
@@ -41,9 +47,13 @@ name="lima-guestagent"
 description="Forward ports to the lima-hostagent"
 
 command=${LIMA_CIDATA_GUEST_INSTALL_PREFIX}/bin/lima-guestagent
-command_args="daemon --debug=${LIMA_CIDATA_DEBUG} --vsock-port \"${LIMA_CIDATA_VSOCK_PORT}\" --virtio-port \"${LIMA_CIDATA_VIRTIO_PORT}\""
-command_background=true
-pidfile="/run/lima-guestagent.pid"
+command_args="daemon --debug=${LIMA_CIDATA_DEBUG} \
+--docker-sockets \"${LIMA_CIDATA_DOCKER_PORT_MONITOR_SOCKETS}" \
+--containerd-sockets \"{LIMA_CIDATA_CONTAINERD_PORT_MONITOR_SOCKETS}" \
+--kubernetes-configs \"{LIMA_CIDATA_KUBERNETES_SERVICE_WATCHER_CONFIGS}" \
+--vsock-port \"${LIMA_CIDATA_VSOCK_PORT}\" \
+--virtio-port \"${LIMA_CIDATA_VIRTIO_PORT}\""
+command_background=true pidfile="/run/lima-guestagent.pid"
 EOF
 	chmod 755 /etc/init.d/lima-guestagent
 
@@ -53,11 +63,40 @@ else
 	# Remove legacy systemd service
 	rm -f "${LIMA_CIDATA_HOME}/.config/systemd/user/lima-guestagent.service"
 
+	docker_args=""
+	docker_items="$(strip_array "${LIMA_CIDATA_DOCKER_PORT_MONITOR_SOCKETS}")"
+	if [ -n "$docker_items" ]; then
+		docker_args="--docker-sockets=${LIMA_CIDATA_DOCKER_PORT_MONITOR_SOCKETS}"
+	fi
+
+	containerd_args=""
+	containerd_items="$(strip_array "${LIMA_CIDATA_CONTAINERD_PORT_MONITOR_SOCKETS}")"
+	if [ -n "$containerd_items" ]; then
+		containerd_args="--containerd-sockets=${LIMA_CIDATA_CONTAINERD_PORT_MONITOR_SOCKETS}"
+	fi
+
+	kubernetes_args=""
+	kubernetes_items="$(strip_array "${LIMA_CIDATA_KUBERNETES_SERVICE_WATCHER_CONFIGS}")"
+	if [ -n "$kubernetes_items" ]; then
+		kubernetes_args="--kubernetes-configs=${LIMA_CIDATA_KUBERNETES_SERVICE_WATCHER_CONFIGS}"
+	fi
+
 	if [ "${LIMA_CIDATA_VSOCK_PORT}" != "0" ]; then
-		sudo "${LIMA_CIDATA_GUEST_INSTALL_PREFIX}"/bin/lima-guestagent install-systemd --vsock-port "${LIMA_CIDATA_VSOCK_PORT}"
-	elif [ "${LIMA_CIDATA_VIRTIO_PORT}" != "" ]; then
-		sudo "${LIMA_CIDATA_GUEST_INSTALL_PREFIX}"/bin/lima-guestagent install-systemd --virtio-port "${LIMA_CIDATA_VIRTIO_PORT}"
+		sudo "${LIMA_CIDATA_GUEST_INSTALL_PREFIX}/bin/lima-guestagent" install-systemd \
+			--vsock-port "${LIMA_CIDATA_VSOCK_PORT}" \
+			${docker_args:+${docker_args}} \
+			${containerd_args:+${containerd_args}} \
+			${kubernetes_args:+${kubernetes_args}}
+	elif [ -n "${LIMA_CIDATA_VIRTIO_PORT}" ]; then
+		sudo "${LIMA_CIDATA_GUEST_INSTALL_PREFIX}/bin/lima-guestagent" install-systemd \
+			--virtio-port "${LIMA_CIDATA_VIRTIO_PORT}" \
+			${docker_args:+${docker_args}} \
+			${containerd_args:+${containerd_args}} \
+			${kubernetes_args:+${kubernetes_args}}
 	else
-		sudo "${LIMA_CIDATA_GUEST_INSTALL_PREFIX}"/bin/lima-guestagent install-systemd
+		sudo "${LIMA_CIDATA_GUEST_INSTALL_PREFIX}/bin/lima-guestagent" install-systemd \
+			${docker_args:+${docker_args}} \
+			${containerd_args:+${containerd_args}} \
+			${kubernetes_args:+${kubernetes_args}}
 	fi
 fi
