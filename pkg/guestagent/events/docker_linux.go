@@ -17,8 +17,9 @@ import (
 	"github.com/docker/docker/api/types/filters"
 	"github.com/docker/docker/client"
 	"github.com/docker/go-connections/nat"
-	"github.com/lima-vm/lima/v2/pkg/guestagent/api"
 	"github.com/sirupsen/logrus"
+
+	"github.com/lima-vm/lima/v2/pkg/guestagent/api"
 )
 
 type DockerEventMonitor struct {
@@ -130,15 +131,15 @@ func (d *DockerEventMonitor) monitorClient(ctx context.Context, cli *client.Clie
 			return fmt.Errorf("context cancellation: %w", ctx.Err())
 
 		case event := <-msgCh:
-			container, err := cli.ContainerInspect(ctx, event.ID)
+			container, err := cli.ContainerInspect(ctx, event.Actor.ID)
 			if err != nil {
-				logrus.Errorf("inspecting container [%v] failed: %v", event.ID, err)
+				logrus.Errorf("inspecting container [%v] failed: %v", event.Actor.ID, err)
 				continue
 			}
 			portMap := container.NetworkSettings.NetworkSettingsBase.Ports
 			logrus.Debugf("received an event: {Status: %+v ContainerID: %+v Ports: %+v}",
 				event.Action,
-				event.ID,
+				event.Actor.ID,
 				portMap)
 
 			switch event.Action {
@@ -151,15 +152,15 @@ func (d *DockerEventMonitor) monitorClient(ctx context.Context, cli *client.Clie
 						continue
 					}
 					logrus.Infof("successfully converted PortMapping:%+v to IPPorts: %+v", portMap, ipPorts)
-					d.runningContainers[event.ID] = ipPorts
+					d.runningContainers[event.Actor.ID] = ipPorts
 					sendHostAgentEvent(false, ipPorts, ch)
 				}
 			case events.ActionStop, events.ActionDie:
-				ipPorts, ok := d.runningContainers[event.ID]
+				ipPorts, ok := d.runningContainers[event.Actor.ID]
 				if !ok {
 					continue
 				}
-				delete(d.runningContainers, event.ID)
+				delete(d.runningContainers, event.Actor.ID)
 				sendHostAgentEvent(true, ipPorts, ch)
 			}
 		case err := <-errCh:

@@ -66,21 +66,21 @@ else
 		sudo "${LIMA_CIDATA_GUEST_INSTALL_PREFIX}/bin/lima-guestagent" install-systemd \
 			--debug="${LIMA_CIDATA_DEBUG}" \
 			--vsock-port "${LIMA_CIDATA_VSOCK_PORT}" \
-			${docker_args} \
-			${containerd_args} \
-			${kubernetes_args}
+			"${docker_args}" \
+			"${containerd_args}" \
+			"${kubernetes_args}"
 	elif [ -n "${LIMA_CIDATA_VIRTIO_PORT}" ]; then
 		sudo "${LIMA_CIDATA_GUEST_INSTALL_PREFIX}/bin/lima-guestagent" install-systemd \
 			--debug="${LIMA_CIDATA_DEBUG}" \
 			--virtio-port "${LIMA_CIDATA_VIRTIO_PORT}" \
-			${docker_args} \
-			${containerd_args} \
-			${kubernetes_args}
+			"${docker_args}" \
+			"${containerd_args}" \
+			"${kubernetes_args}"
 	else
 		sudo "${LIMA_CIDATA_GUEST_INSTALL_PREFIX}/bin/lima-guestagent" install-systemd \
 			--debug="${LIMA_CIDATA_DEBUG}" \
-			${docker_args} \
-			${containerd_args} \
-			${kubernetes_args}
+			"${docker_args}" \
+			"${containerd_args}" \
+			"${kubernetes_args}"
 	fi
 fi

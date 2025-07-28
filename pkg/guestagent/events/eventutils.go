@@ -7,9 +7,10 @@
 package events
 
 import (
-	"github.com/lima-vm/lima/v2/pkg/guestagent/api"
 	"github.com/sirupsen/logrus"
 	"google.golang.org/protobuf/types/known/timestamppb"
+
+	"github.com/lima-vm/lima/v2/pkg/guestagent/api"
 )
 
 func sendHostAgentEvent(remove bool, ipPorts []*api.IPPort, ch chan *api.Event) {

@@ -13,11 +13,11 @@ import (
 
 	"github.com/containerd/containerd"
 	"github.com/containerd/containerd/api/events"
+	containerdNamespace "github.com/containerd/containerd/namespaces"
 	"github.com/gogo/protobuf/proto"
-	"github.com/lima-vm/lima/v2/pkg/guestagent/api"
 	"github.com/sirupsen/logrus"
 
-	containerdNamespace "github.com/containerd/containerd/namespaces"
+	"github.com/lima-vm/lima/v2/pkg/guestagent/api"
 )
 
 const (

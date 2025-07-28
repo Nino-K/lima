@@ -12,7 +12,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/lima-vm/lima/v2/pkg/guestagent/api"
 	"github.com/sirupsen/logrus"
 	"golang.org/x/sys/unix"
 	corev1 "k8s.io/api/core/v1"
@@ -23,6 +22,8 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/clientcmd"
+
+	"github.com/lima-vm/lima/v2/pkg/guestagent/api"
 )
 
 type event struct {
