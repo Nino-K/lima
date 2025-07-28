@@ -8,6 +8,6 @@ package events
 
 type KubeServiceWatcher struct{}
 
-func NewKubeServiceWatcher() *KubeServiceWatcher {
+func NewKubeServiceWatcher(_ []string) *KubeServiceWatcher {
 	panic("NewKubeServiceWatcher is not implemented on this platform")
 }

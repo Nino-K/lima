@@ -267,11 +267,7 @@ func isTimeout(err error) bool {
 
 	var timeoutError timeout
 
-	if !errors.As(err, &timeoutError) {
-		return timeoutError != nil && timeoutError.Timeout()
-	}
-
-	return false
+	return errors.As(err, &timeoutError) && timeoutError.Timeout()
 }
 
 // This is a k3s error that is received over

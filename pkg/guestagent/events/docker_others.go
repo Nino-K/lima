@@ -9,5 +9,5 @@ package events
 type DockerEventMonitor struct{}
 
 func NewDockerEventMonitor(_ []string) (*DockerEventMonitor, error) {
-	panic("Dockert event monitoring is not implemented on this platform")
+	panic("Docker event monitoring is not implemented on this platform")
 }

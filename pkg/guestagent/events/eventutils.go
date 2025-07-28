@@ -22,5 +22,5 @@ func sendHostAgentEvent(remove bool, ipPorts []*api.IPPort, ch chan *api.Event) 
 		ev.AddedLocalPorts = ipPorts
 	}
 	ch <- ev
-	logrus.Infof("sent the following event to hostAgent: %+v", ev)
+	logrus.Debugf("sent the following event to hostAgent: %+v", ev)
 }

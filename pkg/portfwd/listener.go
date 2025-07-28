@@ -77,16 +77,20 @@ func (p *ClosableListeners) forwardTCP(ctx context.Context, client *guestagentcl
 		p.listenersRW.Unlock()
 		return
 	}
-	defer p.Remove(ctx, "tcp", hostAddress, guestAddress)
+	p.listenersRW.Unlock()
+
 	tcpLis, err := Listen(ctx, p.listenConfig, hostAddress)
 	if err != nil {
 		logrus.Errorf("failed to listen to TCP connection: %v", err)
-		p.listenersRW.Unlock()
 		return
 	}
-	defer p.Remove(ctx, "tcp", hostAddress, guestAddress)
+
+	p.listenersRW.Lock()
 	p.listeners[key] = tcpLis
 	p.listenersRW.Unlock()
+
+	defer p.Remove(ctx, "tcp", hostAddress, guestAddress)
+
 	for {
 		conn, err := tcpLis.Accept()
 		if err != nil {

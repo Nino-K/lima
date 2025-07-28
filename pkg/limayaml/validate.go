@@ -664,11 +664,8 @@ func validateSocket(engine, socket string) error {
 		return fmt.Errorf("%s socket path must not be empty", engine)
 	}
 
-	if strings.Contains(socket, "://") {
-		u, err := url.Parse(socket)
-		if err != nil {
-			return fmt.Errorf("%s socket path %q is not a valid URL: %w", engine, socket, err)
-		}
+	u, err := url.Parse(socket)
+	if err == nil && u.Scheme != "" {
 		switch u.Scheme {
 		case "unix", "file":
 			if u.Path == "" {
@@ -685,7 +682,7 @@ func validateSocket(engine, socket string) error {
 		}
 	}
 
-	return validateUnixSocket(engine, socket)
+	return nil
 }
 
 func validateUnixSocket(engine, path string) error {

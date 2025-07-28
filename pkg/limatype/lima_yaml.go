@@ -402,13 +402,14 @@ func DefaultDriver() VMType {
 	}
 }
 
-// Engine is the name of the container engine, e.g. "docker", "containerd".
+// Engine is a list of container engine connection details.
 type Engine struct {
 	Sockets []string `yaml:"sockets,omitempty" json:"sockets,omitempty"`
 }
 
 type Kubernetes struct {
-	Configs []string `yaml:"configs,omitempty" json:"configs,omitempty"` // Paths to Kubernetes config files, e.g. "/etc/rancher/k3s/k3s.yaml"
+	// Configs is a list of Kubernetes config files, e.g. "/etc/rancher/k3s/k3s.yaml"
+	Configs []string `yaml:"configs,omitempty" json:"configs,omitempty"`
 }
 
 type PortMonitor struct {
