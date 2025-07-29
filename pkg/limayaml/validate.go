@@ -364,15 +364,17 @@ func Validate(y *limatype.LimaYAML, warn bool) error {
 		// processed sequentially and the first matching rule for a guest port determines forwarding behavior.
 	}
 
-	for _, socket := range y.PortMonitors.Containerd.Sockets {
-		if err := validateSocket("containerd", socket); err != nil {
-			return err
+	for i, socket := range y.PortMonitors.Containerd.Sockets {
+		field := fmt.Sprintf("portMonitor.containerd.sockets[%d]", i)
+		if err := validateSocket(field, socket); err != nil {
+			errs = errors.Join(errs, err)
 		}
 	}
 
-	for _, socket := range y.PortMonitors.Docker.Sockets {
-		if err := validateSocket("docker", socket); err != nil {
-			return err
+	for i, socket := range y.PortMonitors.Docker.Sockets {
+		field := fmt.Sprintf("portMonitor.docker.sockets[%d]", i)
+		if err := validateSocket(field, socket); err != nil {
+			errs = errors.Join(errs, err)
 		}
 	}
 
@@ -659,35 +661,38 @@ func ValidateAgainstLatestConfig(ctx context.Context, yNew, yLatest []byte) erro
 	return errs
 }
 
-func validateSocket(engine, socket string) error {
+func validateSocket(field, socket string) error {
 	if socket == "" {
-		return fmt.Errorf("%s socket path must not be empty", engine)
+		return fmt.Errorf("%s socket path must not be empty", field)
 	}
 
 	u, err := url.Parse(socket)
-	if err == nil && u.Scheme != "" {
-		switch u.Scheme {
-		case "unix", "file":
-			if u.Path == "" {
-				return fmt.Errorf("%s socket path %q is not a valid URL: missing path", engine, socket)
-			}
-			return validateUnixSocket(engine, u.Path)
-		case "tcp":
-			if u.Host == "" {
-				return fmt.Errorf("%s socket path %q is not a valid URL: missing host", engine, socket)
-			}
-			return nil
-		default:
-			return fmt.Errorf("%s socket path %q is not a valid URL: unsupported scheme %q", engine, socket, u.Scheme)
-		}
+	if err != nil {
+		return fmt.Errorf("%s socket path %q is not a valid URL: %w", field, socket, err)
 	}
-
-	return nil
+	// Treat empty scheme as a unix socket path
+	if u.Scheme == "" {
+		return validateUnixSocket(field, socket)
+	}
+	switch u.Scheme {
+	case "unix", "file":
+		if u.Path == "" {
+			return fmt.Errorf("%s socket path %q is not a valid URL: missing path", field, socket)
+		}
+		return validateUnixSocket(field, u.Path)
+	case "tcp":
+		if u.Host == "" {
+			return fmt.Errorf("%s socket path %q is not a valid URL: missing host", field, socket)
+		}
+		return nil
+	default:
+		return fmt.Errorf("%s socket path %q is not a valid URL: unsupported scheme %q", field, socket, u.Scheme)
+	}
 }
 
-func validateUnixSocket(engine, path string) error {
+func validateUnixSocket(field, path string) error {
 	if !filepath.IsAbs(path) {
-		return fmt.Errorf("%s socket path must be absolute, got %s", engine, path)
+		return fmt.Errorf("field `%s` must be absolute, got %q", field, path)
 	}
 	return nil
 }

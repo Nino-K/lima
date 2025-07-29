@@ -6,8 +6,11 @@
 
 package events
 
+import "github.com/sirupsen/logrus"
+
 type ContainerdEventMonitor struct{}
 
 func NewContainerdEventMonitor(_ []string) (*ContainerdEventMonitor, error) {
-	panic("Containerd event monitoring is not implemented on this platform")
+	logrus.Warn("Containerd event monitoring is not implemented on this platform")
+	return nil, nil
 }

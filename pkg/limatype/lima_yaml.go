@@ -40,7 +40,7 @@ type LimaYAML struct {
 	GuestInstallPrefix    *string       `yaml:"guestInstallPrefix,omitempty" json:"guestInstallPrefix,omitempty" jsonschema:"nullable"`
 	Probes                []Probe       `yaml:"probes,omitempty" json:"probes,omitempty"`
 	PortForwards          []PortForward `yaml:"portForwards,omitempty" json:"portForwards,omitempty"`
-	PortMonitors          PortMonitor   `yaml:"portMonitors,omitempty" json:"portMonitors,omitempty" jsonschema:"nullable"`
+	PortMonitors          PortMonitor   `yaml:"portMonitors,omitempty" json:"portMonitors,omitempty"`
 	CopyToHost            []CopyToHost  `yaml:"copyToHost,omitempty" json:"copyToHost,omitempty"`
 	Message               string        `yaml:"message,omitempty" json:"message,omitempty"`
 	Networks              []Network     `yaml:"networks,omitempty" json:"networks,omitempty" jsonschema:"nullable"`

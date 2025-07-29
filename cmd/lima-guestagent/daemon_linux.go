@@ -78,7 +78,7 @@ func daemonAction(cmd *cobra.Command, _ []string) error {
 		return ticker.C, ticker.Stop
 	}
 
-	agent, err := guestagent.New(ctx,
+	agent, err := guestagent.New(
 		&guestagent.Config{
 			Ticker:            newTicker,
 			IptablesIdle:      tick * 20,

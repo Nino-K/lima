@@ -6,8 +6,11 @@
 
 package events
 
+import "github.com/sirupsen/logrus"
+
 type DockerEventMonitor struct{}
 
 func NewDockerEventMonitor(_ []string) (*DockerEventMonitor, error) {
-	panic("Docker event monitoring is not implemented on this platform")
+	logrus.Warn("Docker event monitoring is not implemented on this platform")
+	return nil, nil
 }

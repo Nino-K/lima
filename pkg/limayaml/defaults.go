@@ -561,10 +561,11 @@ func FillDefault(ctx context.Context, y, d, o *limatype.LimaYAML, filePath strin
 		y.PortMonitors.Containerd.Sockets = unique(append(y.PortMonitors.Containerd.Sockets, "/run/containerd/containerd.sock"))
 	}
 	if y.Containerd.User != nil && *y.Containerd.User {
-		if out, err := executeGuestTemplate("/run/user/{{.UID}}/containerd/containerd.sock", instDir, y.User, y.Param); err == nil {
+		socket := "/run/user/{{.UID}}/containerd/containerd.sock"
+		if out, err := executeGuestTemplate(socket, instDir, y.User, y.Param); err == nil {
 			y.PortMonitors.Containerd.Sockets = unique(append(y.PortMonitors.Containerd.Sockets, out.String()))
 		} else {
-			logrus.WithError(err).Warnf("Couldn't process Containerd user socket")
+			logrus.WithError(err).Warnf("Couldn't process Containerd user socket %q as template", socket)
 		}
 	}
 

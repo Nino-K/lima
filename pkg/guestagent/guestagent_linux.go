@@ -32,17 +32,9 @@ type Config struct {
 	KubernetesConfigs []string
 }
 
-func New(ctx context.Context, cfg *Config) (Agent, error) {
-	dockerEventMonitor, err := events.NewDockerEventMonitor(cfg.DockerSockets)
-	if err != nil {
-		return nil, err
-	}
-
-	containerdEventMonitor, err := events.NewContainerdEventMonitor(cfg.ContainerdSockets)
-	if err != nil {
-		return nil, err
-	}
-
+func New(cfg *Config) (Agent, error) {
+	dockerEventMonitor := events.NewDockerEventMonitor(cfg.DockerSockets)
+	containerdEventMonitor := events.NewContainerdEventMonitor(cfg.ContainerdSockets)
 	kubeServiceWatcher := events.NewKubeServiceWatcher(cfg.KubernetesConfigs)
 
 	a := &agent{
@@ -223,22 +215,29 @@ func (a *agent) Events(ctx context.Context, ch chan *api.Event) {
 	defer close(ch)
 
 	errorCh := make(chan error)
-	go func() {
-		if err := a.kubeServiceWatcher.MonitorServices(ctx, ch); err != nil {
-			errorCh <- err
-		}
-	}()
-
-	go func() {
-		if err := a.containerdEventMonitor.MonitorPorts(ctx, ch); err != nil {
-			errorCh <- err
-		}
-	}()
-	go func() {
-		if err := a.dockerEventMonitor.MonitorPorts(ctx, ch); err != nil {
-			errorCh <- err
-		}
-	}()
+	if a.kubeServiceWatcher != nil {
+		go func() {
+			if err := a.kubeServiceWatcher.MonitorServices(ctx, ch); err != nil {
+				errorCh <- err
+			}
+		}()
+	}
+	if a.containerdEventMonitor != nil {
+		go func() {
+			if err := a.containerdEventMonitor.MonitorPorts(ctx, ch); err != nil {
+				errorCh <- err
+			}
+		}()
+		defer a.containerdEventMonitor.Close()
+	}
+	if a.dockerEventMonitor != nil {
+		go func() {
+			if err := a.dockerEventMonitor.MonitorPorts(ctx, ch); err != nil {
+				errorCh <- err
+			}
+		}()
+		defer a.dockerEventMonitor.Close()
+	}
 
 	tickerCh, tickerClose := a.newTicker()
 	defer tickerClose()

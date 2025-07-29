@@ -120,13 +120,13 @@ func generateSystemdUnit(vsockPort int, virtioPort string, dockerSockets, contai
 		args = append(args, "--debug")
 	}
 	if len(dockerSockets) > 0 {
-		args = append(args, fmt.Sprintf("--docker-sockets %s", strings.Join(dockerSockets, ",")))
+		args = append(args, "--docker-sockets", strings.Join(dockerSockets, ","))
 	}
 	if len(containerdSockets) > 0 {
-		args = append(args, fmt.Sprintf("--containerd-sockets %s", strings.Join(containerdSockets, ",")))
+		args = append(args, "--containerd-sockets", strings.Join(containerdSockets, ","))
 	}
 	if len(kubeConfigs) > 0 {
-		args = append(args, fmt.Sprintf("--kubernetes-configs %s", strings.Join(kubeConfigs, ",")))
+		args = append(args, "--kubernetes-configs", strings.Join(kubeConfigs, ","))
 	}
 
 	m := map[string]string{

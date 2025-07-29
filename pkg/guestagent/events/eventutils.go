@@ -25,3 +25,14 @@ func sendHostAgentEvent(remove bool, ipPorts []*api.IPPort, ch chan *api.Event) 
 	ch <- ev
 	logrus.Debugf("sent the following event to hostAgent: %+v", ev)
 }
+
+type NoClientError struct{}
+
+func (e *NoClientError) Error() string {
+	return "no available client connected to the event monitor"
+}
+
+func (e *NoClientError) Is(target error) bool {
+	_, ok := target.(*NoClientError)
+	return ok
+}

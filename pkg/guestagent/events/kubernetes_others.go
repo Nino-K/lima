@@ -6,8 +6,11 @@
 
 package events
 
+import "github.com/sirupsen/logrus"
+
 type KubeServiceWatcher struct{}
 
 func NewKubeServiceWatcher(_ []string) *KubeServiceWatcher {
-	panic("NewKubeServiceWatcher is not implemented on this platform")
+	logrus.Warn("NewKubeServiceWatcher is not implemented on this platform")
+	return nil
 }
