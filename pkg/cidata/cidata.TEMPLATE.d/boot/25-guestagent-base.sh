@@ -42,9 +42,9 @@ description="Forward ports to the lima-hostagent"
 
 command=${LIMA_CIDATA_GUEST_INSTALL_PREFIX}/bin/lima-guestagent
 command_args="daemon --debug=${LIMA_CIDATA_DEBUG} \
---docker-sockets "${LIMA_CIDATA_DOCKER_PORT_MONITOR_SOCKETS}" \
---containerd-sockets "${LIMA_CIDATA_CONTAINERD_PORT_MONITOR_SOCKETS}" \
---kubernetes-configs "${LIMA_CIDATA_KUBERNETES_SERVICE_WATCHER_CONFIGS}" \
+--docker-sockets \"${LIMA_CIDATA_DOCKER_PORT_MONITOR_SOCKETS}\" \
+--containerd-sockets \"${LIMA_CIDATA_CONTAINERD_PORT_MONITOR_SOCKETS}\" \
+--kubernetes-configs \"${LIMA_CIDATA_KUBERNETES_SERVICE_WATCHER_CONFIGS}\" \
 --vsock-port \"${LIMA_CIDATA_VSOCK_PORT}\" \
 --virtio-port \"${LIMA_CIDATA_VIRTIO_PORT}\""
 command_background=true

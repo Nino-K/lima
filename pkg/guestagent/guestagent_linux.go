@@ -33,16 +33,8 @@ type Config struct {
 }
 
 func New(cfg *Config) (Agent, error) {
-	dockerEventMonitor, err := events.NewDockerEventMonitor(cfg.DockerSockets)
-	if err != nil {
-		return nil, err
-	}
-
-	containerdEventMonitor, err := events.NewContainerdEventMonitor(cfg.ContainerdSockets)
-	if err != nil {
-		return nil, err
-	}
-
+	dockerEventMonitor := events.NewDockerEventMonitor(cfg.DockerSockets)
+	containerdEventMonitor := events.NewContainerdEventMonitor(cfg.ContainerdSockets)
 	kubeServiceWatcher := events.NewKubeServiceWatcher(cfg.KubernetesConfigs)
 
 	a := &agent{
@@ -227,17 +219,18 @@ func (a *agent) Events(ctx context.Context, ch chan *api.Event) {
 			errorCh <- err
 		}
 	}()
-
 	go func() {
 		if err := a.containerdEventMonitor.MonitorPorts(ctx, ch); err != nil {
 			errorCh <- err
 		}
 	}()
+	defer a.containerdEventMonitor.Close()
 	go func() {
 		if err := a.dockerEventMonitor.MonitorPorts(ctx, ch); err != nil {
 			errorCh <- err
 		}
 	}()
+	defer a.dockerEventMonitor.Close()
 
 	tickerCh, tickerClose := a.newTicker()
 	defer tickerClose()

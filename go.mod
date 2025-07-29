@@ -21,7 +21,7 @@ require (
 	github.com/elastic/go-libaudit/v2 v2.6.2
 	github.com/foxcpp/go-mockdns v1.1.0
 	github.com/goccy/go-yaml v1.18.0
-	github.com/gogo/protobuf v1.3.2
+	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/google/go-cmp v0.7.0
 	github.com/google/yamlfmt v0.17.2
 	github.com/invopop/jsonschema v0.13.0

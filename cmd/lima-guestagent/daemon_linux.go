@@ -77,13 +77,14 @@ func daemonAction(cmd *cobra.Command, _ []string) error {
 		return ticker.C, ticker.Stop
 	}
 
-	agent, err := guestagent.New(&guestagent.Config{
-		Ticker:            newTicker,
-		IptablesIdle:      tick * 20,
-		DockerSockets:     dockerSockets,
-		ContainerdSockets: containerdSockets,
-		KubernetesConfigs: kubernetesConfigs,
-	})
+	agent, err := guestagent.New(
+		&guestagent.Config{
+			Ticker:            newTicker,
+			IptablesIdle:      tick * 20,
+			DockerSockets:     dockerSockets,
+			ContainerdSockets: containerdSockets,
+			KubernetesConfigs: kubernetesConfigs,
+		})
 	if err != nil {
 		return err
 	}
