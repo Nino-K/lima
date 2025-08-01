@@ -14,6 +14,7 @@ import (
 
 	"github.com/containerd/containerd"
 	"github.com/containerd/containerd/api/events"
+	"github.com/containerd/containerd/errdefs"
 	containerdNamespace "github.com/containerd/containerd/namespaces"
 	"github.com/sirupsen/logrus"
 	"google.golang.org/protobuf/proto"
@@ -265,22 +266,53 @@ func (c *ContainerdEventMonitor) runMonitorClient(ctx context.Context, cli *cont
 					continue
 				}
 
-				ipPorts, err := c.createIPPort(ctx, cli, envelope.Namespace, exitTask.ContainerID)
+				container, err := cli.LoadContainer(ctx, exitTask.ContainerID)
 				if err != nil {
-					logrus.Errorf("creating IPPorts, for the following exit task: %v failed: %s", exitTask, err)
+					if errdefs.IsNotFound(err) {
+						logrus.Debugf("container: %s in namespace: %s not found, deleting port mapping", exitTask.ContainerID, envelope.Namespace)
+						c.deleteRunningContainer(exitTask.ContainerID, ch)
+						continue
+					}
+					logrus.Errorf("failed to get the container %s from namespace %s: %s", exitTask.ContainerID, envelope.Namespace, err)
 					continue
 				}
 
-				logrus.Debugf("received the following exitTask: %v for: %v", exitTask, ipPorts)
-
-				if len(ipPorts) != 0 {
-					sendHostAgentEvent(true, ipPorts, ch)
-					c.runningContainersMutex.Lock()
-					delete(c.runningContainers, exitTask.ContainerID)
-					c.runningContainersMutex.Unlock()
+				tsk, err := container.Task(ctx, nil)
+				if err != nil {
+					if errdefs.IsNotFound(err) {
+						logrus.Debugf("task for container %s in namespace %s not found, deleting port mapping", exitTask.ContainerID, envelope.Namespace)
+						c.deleteRunningContainer(exitTask.ContainerID, ch)
+						continue
+					}
+					logrus.Errorf("failed to get the task for container %s: %s", exitTask.ContainerID, err)
+					continue
 				}
+				status, err := tsk.Status(ctx)
+				if err != nil {
+					logrus.Errorf("failed to get the task status for container %s: %s", exitTask.ContainerID, err)
+					continue
+				}
+
+				if status.Status == containerd.Running {
+					logrus.Debugf("container %s is still running, but received exit event with status %d", exitTask.ContainerID, exitTask.ExitStatus)
+					continue
+				}
+
+				c.deleteRunningContainer(exitTask.ContainerID, ch)
 			}
 		}
+	}
+}
+
+func (c *ContainerdEventMonitor) deleteRunningContainer(containerID string, ch chan *api.Event) {
+	c.runningContainersMutex.Lock()
+	defer c.runningContainersMutex.Unlock()
+	if ipPorts, ok := c.runningContainers[containerID]; ok {
+		delete(c.runningContainers, containerID)
+		logrus.Debugf("deleted container %s from running containers", containerID)
+		sendHostAgentEvent(true, ipPorts, ch)
+	} else {
+		logrus.Debugf("container %s not found in running containers", containerID)
 	}
 }
 
