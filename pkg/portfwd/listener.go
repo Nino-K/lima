@@ -80,6 +80,7 @@ func (p *ClosableListeners) forwardTCP(ctx context.Context, client *guestagentcl
 	tcpLis, err := Listen(ctx, p.listenConfig, hostAddress)
 	if err != nil {
 		logrus.Errorf("failed to listen to TCP connection: %v", err)
+		p.listenersRW.Unlock()
 		return
 	}
 

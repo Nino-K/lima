@@ -223,10 +223,10 @@ func (a *agent) Events(ctx context.Context, ch chan *api.Event) {
 		}()
 	}
 	if a.containerdEventMonitor != nil {
-		go a.containerdEventMonitor.MonitorPorts(ctx, ch, errorCh)
+		go a.containerdEventMonitor.MonitorPorts(ctx, ch)
 	}
 	if a.dockerEventMonitor != nil {
-		go a.dockerEventMonitor.MonitorPorts(ctx, ch, errorCh)
+		go a.dockerEventMonitor.MonitorPorts(ctx, ch)
 	}
 
 	tickerCh, tickerClose := a.newTicker()

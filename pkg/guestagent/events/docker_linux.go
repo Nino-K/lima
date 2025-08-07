@@ -24,24 +24,18 @@ import (
 )
 
 type DockerEventMonitor struct {
-	dockerSocketPaths      []string
-	runningContainersMutex sync.Mutex
-	// dockerClients holds the list of Docker clients connected to the specified sockets.
-	// We maintain a record of all active containers because neither the stop nor
-	// die events provide the port mapping. As an API consumer, it's our responsibility
-	// to track this information. The map uses the container ID as the key and
-	// stores all published ports associated with that container as the value.
-	runningContainers map[string][]*api.IPPort
+	dockerSocketPaths []string
 }
 
 func NewDockerEventMonitor(dockerSocketPaths []string) *DockerEventMonitor {
 	return &DockerEventMonitor{
 		dockerSocketPaths: dockerSocketPaths,
-		runningContainers: make(map[string][]*api.IPPort),
 	}
 }
 
-func (d *DockerEventMonitor) MonitorPorts(ctx context.Context, ch chan *api.Event, errCh chan error) {
+func (d *DockerEventMonitor) MonitorPorts(ctx context.Context, ch chan *api.Event) {
+	const defaultRetryDelay = 2
+	retryDelay := 0
 	var wg sync.WaitGroup
 	for _, socket := range d.dockerSocketPaths {
 		wg.Add(1)
@@ -50,25 +44,26 @@ func (d *DockerEventMonitor) MonitorPorts(ctx context.Context, ch chan *api.Even
 			for {
 				select {
 				case <-ctx.Done():
-					errCh <- ctx.Err()
 					return
-				default:
+				case <-time.After(time.Duration(retryDelay) * time.Second):
+					logrus.Debugf("attempting to connect to docker socket %s after: %d", socket, retryDelay)
+					retryDelay = defaultRetryDelay
 				}
 
 				info, err := os.Stat(socket)
 				if err != nil {
 					if os.IsNotExist(err) {
 						logrus.Warnf("Docker socket %s does not exist: %s", socket, err)
-						// Wait for 2s before retrying again
-						time.Sleep(2 * time.Second)
 					} else {
 						logrus.Errorf("failed to stat docker socket: %s: %s", socket, err)
 					}
+					retryDelay = defaultRetryDelay
 					continue
 				}
 				if info.IsDir() {
-					errCh <- fmt.Errorf("docker socket path %s is a directory", socket)
-					return
+					logrus.Errorf("docker socket path %s is a directory", socket)
+					retryDelay = 15
+					continue
 				}
 
 				var socketURL string
@@ -80,25 +75,25 @@ func (d *DockerEventMonitor) MonitorPorts(ctx context.Context, ch chan *api.Even
 					}
 				}
 
-				cli, err := client.NewClientWithOpts(client.WithHost(socketURL), client.WithAPIVersionNegotiation())
+				client, err := client.NewClientWithOpts(client.WithHost(socketURL), client.WithAPIVersionNegotiation())
 				if err != nil {
 					logrus.Errorf("failed to create a docker client %s", err)
 					continue
 				}
 				clientCtx, cancel := context.WithTimeout(ctx, defaultSocketTimeout)
-				_, err = cli.Ping(clientCtx)
+				_, err = client.Ping(clientCtx)
 				cancel()
 				if err != nil {
 					logrus.Warnf("docker daemon not serving on socket %s: %v. Retrying in 5s...", socket, err)
-					time.Sleep(5 * time.Second)
+					client.Close()
+					retryDelay = defaultRetryDelay
 					continue
 				}
 				logrus.Infof("successfully connected to docker on socket %s", socket)
-				if err := d.runMonitorClient(ctx, cli, ch); err != nil {
+				if err := d.runMonitorClient(ctx, client, ch); err != nil {
 					logrus.Errorf("docker port monitoring for socket: %s failed: %s", socket, err)
-					errCh <- err
 				}
-				cli.Close()
+				client.Close()
 			}
 		}(socket)
 	}
@@ -106,9 +101,10 @@ func (d *DockerEventMonitor) MonitorPorts(ctx context.Context, ch chan *api.Even
 }
 
 func (d *DockerEventMonitor) runMonitorClient(ctx context.Context, cli *client.Client, ch chan *api.Event) error {
+	runningContainers := make(ipPortMap)
 	defer cli.Close()
 
-	if err := d.initializeRunningContainers(ctx, cli, ch); err != nil {
+	if err := d.initializeRunningContainers(ctx, cli, ch, runningContainers); err != nil {
 		logrus.Errorf("failed to initialize existing docker container published ports: %s", err)
 	}
 
@@ -147,18 +143,14 @@ func (d *DockerEventMonitor) runMonitorClient(ctx context.Context, cli *client.C
 						continue
 					}
 					logrus.Infof("successfully converted PortMapping:%+v to IPPorts: %+v", portMap, ipPorts)
-					d.runningContainersMutex.Lock()
-					d.runningContainers[event.Actor.ID] = ipPorts
-					d.runningContainersMutex.Unlock()
+					runningContainers[event.Actor.ID] = ipPorts
 					sendHostAgentEvent(false, ipPorts, ch)
 				}
 			case events.ActionStop, events.ActionDie:
-				d.runningContainersMutex.Lock()
-				ipPorts, ok := d.runningContainers[event.Actor.ID]
+				ipPorts, ok := runningContainers[event.Actor.ID]
 				if ok {
-					delete(d.runningContainers, event.Actor.ID)
+					delete(runningContainers, event.Actor.ID)
 				}
-				d.runningContainersMutex.Unlock()
 				if ok {
 					sendHostAgentEvent(true, ipPorts, ch)
 				}
@@ -169,7 +161,7 @@ func (d *DockerEventMonitor) runMonitorClient(ctx context.Context, cli *client.C
 	}
 }
 
-func (d *DockerEventMonitor) initializeRunningContainers(ctx context.Context, cli *client.Client, ch chan *api.Event) error {
+func (d *DockerEventMonitor) initializeRunningContainers(ctx context.Context, cli *client.Client, ch chan *api.Event, runningContainers ipPortMap) error {
 	containers, err := cli.ContainerList(ctx, container.ListOptions{
 		Filters: filters.NewArgs(filters.Arg("status", "running")),
 	})
@@ -194,9 +186,7 @@ func (d *DockerEventMonitor) initializeRunningContainers(ctx context.Context, cl
 			})
 		}
 		sendHostAgentEvent(false, ipPorts, ch)
-		d.runningContainersMutex.Lock()
-		d.runningContainers[container.ID] = ipPorts
-		d.runningContainersMutex.Unlock()
+		runningContainers[container.ID] = ipPorts
 	}
 	return nil
 }

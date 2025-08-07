@@ -519,7 +519,8 @@ portMonitors:
   # docker specifies a list of Unix sockets to monitor for Docker API port forwards.
   docker:
     sockets: []
-  # containerd specifies a list of Unix sockets to monitor for containerd workloads.
+  # containerd specifies a list of Unix sockets to monitor for containerd workloads. If no sockets are specified, the default socket will be used
+  # using the containerd settings. If containerd user is enabled a user socket will be used, otherwise a system socket.
   containerd:
     sockets: []
   # kubernetes specifies paths to kubeconfig files to watch for Kubernetes port-forwarded services.
