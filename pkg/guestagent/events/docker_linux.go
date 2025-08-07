@@ -25,7 +25,6 @@ import (
 
 type DockerEventMonitor struct {
 	dockerSocketPaths      []string
-	dockerClients          []*client.Client
 	runningContainersMutex sync.Mutex
 	// dockerClients holds the list of Docker clients connected to the specified sockets.
 	// We maintain a record of all active containers because neither the stop nor
@@ -42,89 +41,37 @@ func NewDockerEventMonitor(dockerSocketPaths []string) *DockerEventMonitor {
 	}
 }
 
-// MonitorPorts starts monitoring Docker ports on the specified sockets.
-// It connects to the Docker daemon, listens for container events, and sends
-// port mapping events to the provided channel.
-// It returns an error if it fails to connect to any of the Docker sockets or if
-// it encounters an error while monitoring the ports.
-func (d *DockerEventMonitor) MonitorPorts(ctx context.Context, ch chan *api.Event) error {
-	if err := d.tryConnectClient(ctx); err != nil {
-		return err
-	}
-
-	errCh := make(chan error, len(d.dockerClients))
+func (d *DockerEventMonitor) MonitorPorts(ctx context.Context, ch chan *api.Event, errCh chan error) {
 	var wg sync.WaitGroup
-	for _, cli := range d.dockerClients {
-		wg.Add(1)
-		go func(c *client.Client) {
-			defer wg.Done()
-			if err := d.monitorClient(ctx, c, ch); err != nil {
-				errCh <- fmt.Errorf("monitoring ports failed: %w", err)
-			}
-		}(cli)
-	}
-
-	allDone := make(chan struct{})
-	go func() {
-		wg.Wait()
-		close(allDone)
-	}()
-
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	case <-allDone:
-		close(errCh)
-		var errs []error
-		for err := range errCh {
-			errs = append(errs, err)
-		}
-		if len(errs) > 0 {
-			return fmt.Errorf("errors occurred during monitoring: %v", errs)
-		}
-		return nil
-	}
-}
-
-// Close closes all Docker clients and clears the running containers map.
-func (d *DockerEventMonitor) Close() {
-	for _, cli := range d.dockerClients {
-		if err := cli.Close(); err != nil {
-			logrus.Errorf("failed to close Docker client: %v", err)
-		}
-	}
-	d.dockerClients = nil
-	d.runningContainers = nil
-}
-
-func (d *DockerEventMonitor) tryConnectClient(ctx context.Context) error {
-	const (
-		maxRetries = 20
-		retryDelay = 3 * time.Second
-	)
-
 	for _, socket := range d.dockerSocketPaths {
-		logrus.Debugf("attempting to read Docker socket %s", socket)
-
-		var (
-			cli       *client.Client
-			lastErr   error
-			socketURL string
-		)
-
-		for attempt := 1; attempt <= maxRetries; attempt++ {
-			info, statErr := os.Stat(socket)
-			if statErr != nil {
-				if os.IsNotExist(statErr) {
-					logrus.Warnf("attempt %d/%d: Docker socket %s does not exist: %s", attempt, maxRetries, socket, statErr)
-					lastErr = statErr
+		wg.Add(1)
+		go func(socket string) {
+			defer wg.Done()
+			for {
+				select {
+				case <-ctx.Done():
+					errCh <- ctx.Err()
+					return
+				default:
 				}
-			} else if info.IsDir() {
-				logrus.Warnf("docker socket %s is a directory, skipping", socket)
-				// No point retrying if it's a directory, break early for this socket
-				lastErr = fmt.Errorf("docker socket %s is a directory", socket)
-				break
-			} else {
+
+				info, err := os.Stat(socket)
+				if err != nil {
+					if os.IsNotExist(err) {
+						logrus.Warnf("Docker socket %s does not exist: %s", socket, err)
+						// Wait for 2s before retrying again
+						time.Sleep(2 * time.Second)
+					} else {
+						logrus.Errorf("failed to stat docker socket: %s: %s", socket, err)
+					}
+					continue
+				}
+				if info.IsDir() {
+					errCh <- fmt.Errorf("docker socket path %s is a directory", socket)
+					return
+				}
+
+				var socketURL string
 				if !strings.HasPrefix(socket, "unix://") {
 					if strings.HasPrefix(socket, "/") {
 						socketURL = "unix://" + strings.Trim(socket, "/")
@@ -132,81 +79,30 @@ func (d *DockerEventMonitor) tryConnectClient(ctx context.Context) error {
 						socketURL = "unix://" + socket
 					}
 				}
-				cli, lastErr = client.NewClientWithOpts(client.WithHost(socketURL), client.WithAPIVersionNegotiation())
-				if lastErr == nil {
-					_, lastErr = cli.Ping(ctx)
-					if lastErr != nil {
-						logrus.Warnf("attempt %d/%d: failed to ping Docker at %s: %v", attempt, maxRetries, socketURL, lastErr)
-					}
+
+				cli, err := client.NewClientWithOpts(client.WithHost(socketURL), client.WithAPIVersionNegotiation())
+				if err != nil {
+					logrus.Errorf("failed to create a docker client %s", err)
+					continue
 				}
-
-				if lastErr == nil {
-					logrus.Infof("successfully connected to Docker daemon at %s", socketURL)
-					d.dockerClients = append(d.dockerClients, cli)
-					break
+				clientCtx, cancel := context.WithTimeout(ctx, defaultSocketTimeout)
+				_, err = cli.Ping(clientCtx)
+				cancel()
+				if err != nil {
+					logrus.Warnf("docker daemon not serving on socket %s: %v. Retrying in 5s...", socket, err)
+					time.Sleep(5 * time.Second)
+					continue
 				}
+				logrus.Infof("successfully connected to docker on socket %s", socket)
+				if err := d.runMonitorClient(ctx, cli, ch); err != nil {
+					logrus.Errorf("docker port monitoring for socket: %s failed: %s", socket, err)
+					errCh <- err
+				}
+				cli.Close()
 			}
-
-			logrus.Warnf("attempt %d/%d: failed to connect to Docker at %s: %v", attempt, maxRetries, socket, lastErr)
-
-			select {
-			case <-ctx.Done():
-				logrus.Warn("retry canceled, context done")
-				return ctx.Err()
-			case <-time.After(retryDelay):
-				continue
-			}
-		}
-
-		if cli == nil {
-			logrus.Errorf("failed to connect to Docker at %s after %d attempts: %v", socketURL, maxRetries, lastErr)
-		}
+		}(socket)
 	}
-
-	if len(d.dockerClients) == 0 {
-		return &NoClientError{}
-	}
-	return nil
-}
-
-func (d *DockerEventMonitor) monitorClient(ctx context.Context, cli *client.Client, ch chan *api.Event) error {
-	socket := cli.DaemonHost()
-	backoff := time.Second * 2
-	maxBackoff := time.Minute
-
-	for {
-		err := d.runMonitorClient(ctx, cli, ch)
-		if err != nil {
-			logrus.Errorf("monitoring failed for Docker socket %s: %v", socket, err)
-		}
-
-		select {
-		case <-ctx.Done():
-			logrus.Infof("context cancelled for monitorClient (socket: %s)", socket)
-			return ctx.Err()
-		default:
-			logrus.Infof("retrying connection to Docker socket %s in %s", socket, backoff)
-
-			wait := time.After(backoff)
-			<-wait
-			backoff *= 2
-			if backoff > maxBackoff {
-				backoff = maxBackoff
-			}
-
-			newCli, err := client.NewClientWithOpts(
-				client.WithHost(socket),
-				client.WithAPIVersionNegotiation(),
-			)
-			if err != nil {
-				logrus.Errorf("failed to reconnect Docker client at %s: %v", socket, err)
-				continue
-			}
-			// close the old client
-			cli.Close()
-			cli = newCli
-		}
-	}
+	wg.Wait()
 }
 
 func (d *DockerEventMonitor) runMonitorClient(ctx context.Context, cli *client.Client, ch chan *api.Event) error {

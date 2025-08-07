@@ -30,9 +30,7 @@ const (
 )
 
 type ContainerdEventMonitor struct {
-	socketPaths []string
-	// clients holds the list of containerd clients connected to the specified sockets.
-	clients                map[string]*containerd.Client
+	socketPaths            []string
 	runningContainersMutex sync.Mutex
 	runningContainers      map[string][]*api.IPPort
 }
@@ -40,149 +38,63 @@ type ContainerdEventMonitor struct {
 func NewContainerdEventMonitor(socketPaths []string) *ContainerdEventMonitor {
 	return &ContainerdEventMonitor{
 		socketPaths:       socketPaths,
-		clients:           make(map[string]*containerd.Client),
 		runningContainers: make(map[string][]*api.IPPort),
 	}
 }
 
-func (c *ContainerdEventMonitor) MonitorPorts(ctx context.Context, ch chan *api.Event) error {
-	if err := c.tryConnectClient(ctx); err != nil {
-		return err
-	}
-
-	errCh := make(chan error, len(c.clients))
+func (c *ContainerdEventMonitor) MonitorPorts(ctx context.Context, ch chan *api.Event, errCh chan error) {
 	var wg sync.WaitGroup
-	for socket, cli := range c.clients {
-		wg.Add(1)
-		go func(socket string, client *containerd.Client) {
-			defer wg.Done()
-			defer client.Close()
-			if err := c.monitorClient(ctx, socket, client, ch); err != nil {
-				errCh <- fmt.Errorf("monitoring ports failed: %w", err)
-			}
-		}(socket, cli)
-	}
-	allDone := make(chan struct{})
-	go func() {
-		wg.Wait()
-		close(allDone)
-	}()
-
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	case <-allDone:
-		close(errCh)
-		var errs []error
-		for err := range errCh {
-			errs = append(errs, err)
-		}
-		if len(errs) > 0 {
-			return fmt.Errorf("errors occurred during monitoring: %v", errs)
-		}
-		return nil
-	}
-}
-
-// Close closes all containerd clients and clears the running containers map.
-func (c *ContainerdEventMonitor) Close() {
-	for _, cli := range c.clients {
-		if err := cli.Close(); err != nil {
-			logrus.Errorf("failed to close containerd client: %v", err)
-		}
-	}
-	c.clients = nil
-	c.runningContainersMutex.Lock()
-	defer c.runningContainersMutex.Unlock()
-	c.runningContainers = nil
-}
-
-func (c *ContainerdEventMonitor) tryConnectClient(ctx context.Context) error {
-	const (
-		maxRetries = 10
-		retryDelay = 3 * time.Second
-	)
-
 	for _, socket := range c.socketPaths {
-		logrus.Debugf("reading containerd socket %s", socket)
-		for attempt := 1; attempt <= maxRetries; attempt++ {
-			info, statErr := os.Stat(socket)
-			if statErr != nil {
-				if os.IsNotExist(statErr) {
-					logrus.Warnf("attempt %d/%d: containerd socket %s does not exist", attempt, maxRetries, socket)
+		wg.Add(1)
+		go func(socket string) {
+			defer wg.Done()
+			for {
+				select {
+				case <-ctx.Done():
+					errCh <- ctx.Err()
+					return
+				default:
 				}
-			} else {
+				info, err := os.Stat(socket)
+				if err != nil {
+					if os.IsNotExist(err) {
+						logrus.Warnf("containerd socket %s does not exist", socket)
+						// Wait for 2s before retrying again
+						time.Sleep(2 * time.Second)
+					} else {
+						logrus.Errorf("failed to stat containerd socket %s: %v", socket, err)
+					}
+					continue
+				}
 				if info.IsDir() {
-					logrus.Errorf("socket %s is a directory", socket)
-					// Skip retry if the socket is a directory
-					break
+					errCh <- fmt.Errorf("containerd socket path %s is a directory", socket)
+					// this is unrecoverable
+					return
 				}
 				cli, err := containerd.New(socket, containerd.WithDefaultNamespace(containerdNamespace.Default))
 				if err != nil {
-					logrus.Warnf("attempt %d/%d: failed to create client for socket %s: %v", attempt, maxRetries, socket, err)
-				} else {
-					clientCtx, cancel := context.WithTimeout(ctx, defaultSocketTimeout)
-					serving, serveErr := cli.IsServing(clientCtx)
-					cancel()
-
-					if serveErr == nil && serving {
-						logrus.Infof("successfully connected to containerd daemon at %s (attempt %d)", socket, attempt)
-						c.clients[socket] = cli
-						break
-					}
-
-					logrus.Warnf("attempt %d/%d: containerd client at %s not serving: %v", attempt, maxRetries, socket, serveErr)
-					cli.Close()
+					logrus.Warnf("failed to create client for socket %s: %v", socket, err)
+					continue
 				}
+				clientCtx, cancel := context.WithTimeout(ctx, defaultSocketTimeout)
+				serving, serveErr := cli.IsServing(clientCtx)
+				cancel()
+				if serveErr != nil || !serving {
+					logrus.Warnf("containerd daemon not serving on socket %s: %v. Retrying in 5s...", socket, serveErr)
+					cli.Close()
+					time.Sleep(5 * time.Second)
+					continue
+				}
+				logrus.Infof("successfully connected to containerd on socket %s", socket)
+				if err := c.runMonitorClient(ctx, cli, ch); err != nil {
+					logrus.Errorf("containerd port monitoring for socket: %s failed: %s", socket, err)
+					errCh <- err
+				}
+				cli.Close()
 			}
-
-			select {
-			case <-time.After(retryDelay):
-				continue
-			case <-ctx.Done():
-				logrus.Warn("retry canceled, context done")
-				return ctx.Err()
-			}
-		}
+		}(socket)
 	}
-
-	if len(c.clients) == 0 {
-		return &NoClientError{}
-	}
-	return nil
-}
-
-func (c *ContainerdEventMonitor) monitorClient(ctx context.Context, socket string, cli *containerd.Client, ch chan *api.Event) error {
-	backoff := time.Second * 2
-	maxBackoff := time.Minute
-	for {
-		if err := c.runMonitorClient(ctx, cli, ch); err != nil {
-			logrus.Errorf("monitoring client failed: %v", err)
-		}
-
-		select {
-		case <-ctx.Done():
-			logrus.Info("context done, stopping monitoring")
-			return ctx.Err()
-		default:
-			logrus.Infof("retrying connection to containerd socket %s in %s", socket, backoff)
-
-			err := cli.Reconnect()
-			if err == nil {
-				logrus.Infof("reconnected to containerd socket %s successfully", socket)
-				backoff = time.Second * 2 // reset backoff on successful reconnect
-				continue
-			}
-			logrus.Warnf("failed to reconnect to containerd socket %s: %v", socket, err)
-
-			wait := time.After(backoff)
-			<-wait
-			backoff *= 2
-			if backoff > maxBackoff {
-				backoff = maxBackoff
-			}
-		}
-	}
+	wg.Wait()
 }
 
 func (c *ContainerdEventMonitor) runMonitorClient(ctx context.Context, cli *containerd.Client, ch chan *api.Event) error {
